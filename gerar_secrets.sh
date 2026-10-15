@@ -1,12 +1,21 @@
 #!/usr/bin/env bash
 # Le o .env e gera ota_boot/secrets.h, que o sketch inclui.
 # Rodar sempre que mudar o .env, antes de compilar.
+#
+#   ./gerar_secrets.sh        -> para o .bin publicado: SEM Wi-Fi
+#   ./gerar_secrets.sh --usb  -> para gravar pela USB: COM Wi-Fi (salva a rede na placa)
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ENV_FILE="$DIR/.env"
 SAIDA="$DIR/ota_boot/secrets.h"
-CHAVES=(WIFI_SSID WIFI_PASSWORD MANIFEST_URL)
+CHAVES=(MANIFEST_URL MQTT_BROKER MQTT_TOPIC)
+if [[ "${1:-}" == "--usb" ]]; then
+  CHAVES+=(WIFI_SSID WIFI_PASSWORD)
+elif [[ -n "${1:-}" ]]; then
+  echo "Uso: $0 [--usb]" >&2
+  exit 1
+fi
 trap 'rm -f "$SAIDA.tmp"' EXIT
 
 if [[ ! -f "$ENV_FILE" ]]; then
@@ -42,4 +51,8 @@ done < "$ENV_FILE"
 } > "$SAIDA.tmp"
 mv "$SAIDA.tmp" "$SAIDA"
 
-echo "secrets.h gerado em $SAIDA"
+if [[ "${1:-}" == "--usb" ]]; then
+  echo "secrets.h gerado COM Wi-Fi: so para gravar pela USB, nao publique este .bin."
+else
+  echo "secrets.h gerado SEM Wi-Fi: pronto para o .bin publicado."
+fi

@@ -2,6 +2,7 @@
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include <Update.h>
+#include <PubSubClient.h>
 #include "secrets.h"
 
 enum ResultadoOTA {
@@ -12,17 +13,43 @@ enum ResultadoOTA {
   OTA_GRAVACAO_FALHOU
 };
 
-const char *VERSAO_FIRMWARE = "1.0";
+const char *VERSAO_FIRMWARE = "2.0";
 
-const char *ssid = WIFI_SSID;
-const char *password = WIFI_PASSWORD;
 const char *URL_MANIFESTO = MANIFEST_URL;
 
+const uint16_t PORTA_MQTT = 1883;
+const unsigned long INTERVALO_RECONEXAO_MS = 5000UL;
+const unsigned long DEBOUNCE_MS = 30UL;
+
+struct Botao {
+  uint8_t pino;
+  char letra;
+  bool estadoEstavel;
+  bool ultimaLeitura;
+  unsigned long ultimaMudancaMs;
+};
+
+Botao botoes[] = {
+  {18, 'G', HIGH, HIGH, 0},
+  {19, 'Y', HIGH, HIGH, 0},
+  {21, 'E', HIGH, HIGH, 0}
+};
+const uint8_t QUANTIDADE_BOTOES = sizeof(botoes) / sizeof(botoes[0]);
+
+WiFiClient clienteRede;
+PubSubClient mqtt(clienteRede);
+unsigned long ultimaTentativaMs = 0;
+
 bool conectarWiFi(unsigned long timeoutMs) {
-  Serial.print("Conectando a rede Wi-Fi ");
-  Serial.print(ssid);
+  Serial.print("Conectando ao Wi-Fi");
   WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
+#ifdef WIFI_SSID
+  // Gravacao pela USB: conecta e salva a rede na NVS da placa.
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+#else
+  // Binario publicado: sem senha no codigo, usa a rede salva na NVS.
+  WiFi.begin();
+#endif
   unsigned long inicio = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - inicio < timeoutMs) {
     delay(500);
@@ -30,7 +57,8 @@ bool conectarWiFi(unsigned long timeoutMs) {
   }
   Serial.println();
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("Wi-Fi conectado com sucesso!");
+    Serial.print("Wi-Fi conectado com sucesso: ");
+    Serial.println(WiFi.SSID());
     return true;
   }
   Serial.println("Erro: Nao foi possivel conectar ao Wi-Fi.");
@@ -178,6 +206,70 @@ void verificarAtualizacao() {
   aplicarAtualizacao(urlBinario);
 }
 
+void configurarBotoes() {
+  // Botao entre o pino e o GND: solto = HIGH (pull-up interno), apertado = LOW.
+  for (uint8_t i = 0; i < QUANTIDADE_BOTOES; i++) {
+    pinMode(botoes[i].pino, INPUT_PULLUP);
+  }
+}
+
+bool conectarMQTT() {
+  String idCliente = "next2026-" + WiFi.macAddress();
+  Serial.print("Conectando ao broker MQTT ");
+  Serial.print(MQTT_BROKER);
+  Serial.print("... ");
+  if (mqtt.connect(idCliente.c_str())) {
+    Serial.println("conectado!");
+    return true;
+  }
+  Serial.print("falhou, estado ");
+  Serial.println(mqtt.state());
+  return false;
+}
+
+// Tenta reconectar sem travar o loop: no maximo uma tentativa a cada 5 s.
+void manterConexoes(unsigned long agora) {
+  if (WiFi.status() == WL_CONNECTED && mqtt.connected()) return;
+  if (agora - ultimaTentativaMs < INTERVALO_RECONEXAO_MS) return;
+  ultimaTentativaMs = agora;
+
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Wi-Fi caiu, reconectando...");
+    WiFi.reconnect();
+    return;
+  }
+  conectarMQTT();
+}
+
+void enviarLetra(char letra) {
+  Serial.print("Botao ");
+  Serial.print(letra);
+  if (!mqtt.connected()) {
+    Serial.println(" (sem MQTT, nao enviado)");
+    return;
+  }
+  char mensagem[2] = {letra, '\0'};
+  mqtt.publish(MQTT_TOPIC, mensagem);
+  Serial.println(" enviado");
+}
+
+void lerBotoes(unsigned long agora) {
+  for (uint8_t i = 0; i < QUANTIDADE_BOTOES; i++) {
+    Botao &b = botoes[i];
+    bool leitura = digitalRead(b.pino);
+    if (leitura != b.ultimaLeitura) {
+      b.ultimaLeitura = leitura;
+      b.ultimaMudancaMs = agora;
+    }
+    if (agora - b.ultimaMudancaMs >= DEBOUNCE_MS && leitura != b.estadoEstavel) {
+      b.estadoEstavel = leitura;
+      if (b.estadoEstavel == LOW) {
+        enviarLetra(b.letra);
+      }
+    }
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   Serial.println();
@@ -185,10 +277,18 @@ void setup() {
   Serial.print(VERSAO_FIRMWARE);
   Serial.println(" iniciado.");
 
+  configurarBotoes();
+  mqtt.setServer(MQTT_BROKER, PORTA_MQTT);
+
   if (conectarWiFi(10000UL)) {
     verificarAtualizacao();
+    conectarMQTT();
   }
 }
 
 void loop() {
+  unsigned long agora = millis();
+  manterConexoes(agora);
+  mqtt.loop();
+  lerBotoes(agora);
 }

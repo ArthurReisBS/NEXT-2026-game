@@ -1,2 +1,5 @@
 .env
 ota_boot/secrets.h
+ota_boot/build/
+cliente_teste.py
+.venv/
