@@ -1,6 +1,6 @@
-# Jogo controlado pelos botoes do ESP32 via MQTT.
-# G soma 1, Y soma 10, E confirma (Enter).
-# Sem o ESP32, as teclas G, Y e Enter do teclado fazem o mesmo.
+# Jogo de dois jogadores controlado pelos botoes do ESP32 via MQTT.
+# Cada mensagem e letra + jogador: G1/G2 somam 1, Y1/Y2 somam 10, E1/E2 confirmam (Enter).
+# Para testar sem o ESP32, use ../teste_botoes, que publica as mesmas mensagens.
 import os
 import queue
 
@@ -37,7 +37,7 @@ def iniciar_mqtt():
     return cliente
 
 
-class Jogo:
+class Jogador:
     def __init__(self):
         self.valor = 0
         self.ultimo_confirmado = None
@@ -52,18 +52,34 @@ class Jogo:
             self.valor = 0
 
 
+class Jogo:
+    def __init__(self):
+        self.jogadores = {"1": Jogador(), "2": Jogador()}
+
+    def aplicar(self, mensagem):
+        # "G1" -> letra G para o jogador 1; qualquer outra coisa e ignorada
+        if len(mensagem) == 2 and mensagem[1] in self.jogadores:
+            self.jogadores[mensagem[1]].aplicar(mensagem[0])
+
+
 def desenhar(tela, jogo, fonte_campo, fonte_info, conectado):
     tela.fill(COR_FUNDO)
 
-    campo = pygame.Rect(0, 0, 320, 90)
-    campo.center = (LARGURA // 2, ALTURA // 2 - 20)
-    pygame.draw.rect(tela, COR_CAMPO, campo, border_radius=8)
-    texto = fonte_campo.render(str(jogo.valor), True, COR_TEXTO)
-    tela.blit(texto, texto.get_rect(midright=(campo.right - 20, campo.centery)))
+    for i, (numero, jogador) in enumerate(jogo.jogadores.items()):
+        centro_x = LARGURA // 4 + i * LARGURA // 2
 
-    if jogo.ultimo_confirmado is not None:
-        info = fonte_info.render(f"Confirmado: {jogo.ultimo_confirmado}", True, COR_INFO)
-        tela.blit(info, info.get_rect(center=(LARGURA // 2, campo.bottom + 40)))
+        titulo = fonte_info.render(f"Jogador {numero}", True, COR_INFO)
+        tela.blit(titulo, titulo.get_rect(center=(centro_x, ALTURA // 2 - 80)))
+
+        campo = pygame.Rect(0, 0, 200, 90)
+        campo.center = (centro_x, ALTURA // 2 - 20)
+        pygame.draw.rect(tela, COR_CAMPO, campo, border_radius=8)
+        texto = fonte_campo.render(str(jogador.valor), True, COR_TEXTO)
+        tela.blit(texto, texto.get_rect(midright=(campo.right - 20, campo.centery)))
+
+        if jogador.ultimo_confirmado is not None:
+            info = fonte_info.render(f"Confirmado: {jogador.ultimo_confirmado}", True, COR_INFO)
+            tela.blit(info, info.get_rect(center=(centro_x, campo.bottom + 40)))
 
     status = "MQTT conectado" if conectado else "MQTT desconectado"
     rodape = fonte_info.render(f"{status}  |  G +1   Y +10   E enter", True, COR_INFO)
@@ -82,15 +98,12 @@ def main():
 
     cliente = iniciar_mqtt()
     jogo = Jogo()
-    teclas = {pygame.K_g: "G", pygame.K_y: "Y", pygame.K_RETURN: "E", pygame.K_KP_ENTER: "E"}
 
     rodando = True
     while rodando:
         for evento in pygame.event.get():
             if evento.type == pygame.QUIT:
                 rodando = False
-            elif evento.type == pygame.KEYDOWN and evento.key in teclas:
-                jogo.aplicar(teclas[evento.key])
 
         while not letras_recebidas.empty():
             jogo.aplicar(letras_recebidas.get())
