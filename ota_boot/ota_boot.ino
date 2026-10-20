@@ -13,29 +13,29 @@ enum ResultadoOTA {
   OTA_GRAVACAO_FALHOU
 };
 
-const char *VERSAO_FIRMWARE = "3.0";
+const char *VERSAO_FIRMWARE = "3.1";
 
 const char *URL_MANIFESTO = MANIFEST_URL;
 
 const unsigned long DEBOUNCE_MS = 30UL;
 
-// O jogo procura o ESP32 por este servico e recebe as letras como notificacoes
+// O jogo procura o ESP32 por este servico e recebe os botoes como notificacoes
 // da caracteristica. Os mesmos UUIDs estao em jogo/jogo.py.
 const char *UUID_SERVICO = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
 const char *UUID_CARACTERISTICA = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
 
 struct Botao {
   uint8_t pino;
-  char letra;
+  uint8_t numero;
   bool estadoEstavel;
   bool ultimaLeitura;
   unsigned long ultimaMudancaMs;
 };
 
 Botao botoes[] = {
-  {18, 'G', HIGH, HIGH, 0},
-  {19, 'Y', HIGH, HIGH, 0},
-  {21, 'E', HIGH, HIGH, 0}
+  {25, 1, HIGH, HIGH, 0},  // BTN1 verde
+  {26, 2, HIGH, HIGH, 0},  // BTN2 amarelo
+  {27, 3, HIGH, HIGH, 0}   // BTN3 vermelho
 };
 const uint8_t QUANTIDADE_BOTOES = sizeof(botoes) / sizeof(botoes[0]);
 
@@ -232,7 +232,7 @@ void desligarWiFi() {
 }
 
 void iniciarBluetooth() {
-  String nome = String("NEXT2026-J") + JOGADOR;
+  const String nome = "NEXT2026-botoes";
   NimBLEDevice::init(nome.c_str());
 
   NimBLEServer *servidor = NimBLEDevice::createServer();
@@ -259,18 +259,25 @@ void iniciarBluetooth() {
   Serial.println(nome);
 }
 
-// Manda "<letra><jogador>", por exemplo "G1", que e o que o jogo entende.
-void enviarLetra(char letra) {
-  Serial.print("Botao ");
-  Serial.print(letra);
+// Manda "BTN1", "BTN2" ou "BTN3", que e o que o jogo entende. A mesma linha sai pela
+// USB, para o jogo tambem funcionar por serial (Linux/macOS).
+void enviarBotao(uint8_t numero) {
+  String mensagem = "BTN" + String(numero);
+  Serial.println(mensagem);
   if (caracteristicaBotoes == nullptr || NimBLEDevice::getServer()->getConnectedCount() == 0) {
-    Serial.println(" (jogo nao conectado, nao enviado)");
+    Serial.println("(jogo nao conectado por Bluetooth, nao enviado)");
     return;
   }
-  char mensagem[3] = {letra, JOGADOR[0], '\0'};
-  caracteristicaBotoes->setValue((const uint8_t *)mensagem, 2);
+  caracteristicaBotoes->setValue((const uint8_t *)mensagem.c_str(), mensagem.length());
   caracteristicaBotoes->notify();
-  Serial.println(" enviado");
+}
+
+// Para testar sem os botoes: digitar 1, 2 ou 3 no Serial Monitor aperta o botao correspondente.
+void lerTestePelaSerial() {
+  while (Serial.available()) {
+    char c = Serial.read();
+    if (c >= '1' && c <= '3') enviarBotao(c - '0');
+  }
 }
 
 void lerBotoes(unsigned long agora) {
@@ -284,7 +291,7 @@ void lerBotoes(unsigned long agora) {
     if (agora - b.ultimaMudancaMs >= DEBOUNCE_MS && leitura != b.estadoEstavel) {
       b.estadoEstavel = leitura;
       if (b.estadoEstavel == LOW) {
-        enviarLetra(b.letra);
+        enviarBotao(b.numero);
       }
     }
   }
@@ -308,4 +315,5 @@ void setup() {
 
 void loop() {
   lerBotoes(millis());
+  lerTestePelaSerial();
 }

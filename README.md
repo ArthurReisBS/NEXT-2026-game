@@ -3,25 +3,26 @@
 ## Como funciona
 
 ```
-[botões] → ESP32 ──Bluetooth (BLE)──▶ PC (jogo.py)
+[3 botões] → ESP32 ──Bluetooth (BLE)──▶ PC rodando desafio_planta (C++ / raylib)
+              "BTN1" "BTN2" "BTN3"
 ```
 
-- Cada ESP32 é um **controle** com 3 botões. Ao apertar, ele envia por Bluetooth a letra + o número do jogador: `G1`, `Y1`, `E2`...
-- O **jogo** (Python) procura os controles sozinho, conecta (até 2 ao mesmo tempo) e reconecta se algum cair. Não precisa parear no Windows nem de internet.
-- Regras: `G` soma 1, `Y` soma 10, `E` confirma o número.
+- O ESP32 lê 3 botões arcade e, a cada aperto, envia por Bluetooth o texto `BTN1`, `BTN2` ou `BTN3`.
+- O jogo (**Desafio EcoTrack**, pasta [`desafio-planta`](desafio-planta/README.md)) procura o ESP32 sozinho, conecta e reconecta se cair. Não precisa parear no Windows nem de internet.
+- O teclado (teclas **1**, **2**, **3**) funciona sempre, com ou sem ESP32.
 - O firmware ainda se atualiza por OTA: ao ligar, usa o Wi-Fi só para checar o `version.json`, depois desliga o Wi-Fi e fica só no Bluetooth.
 
-| Botão | Pino | Letra |
+| Botão | Pino | Envia |
 | ----- | ---- | ----- |
-| 1 | D18 | `G` |
-| 2 | D19 | `Y` |
-| 3 | D21 | `E` |
+| 1 verde | GPIO25 | `BTN1` |
+| 2 amarelo | GPIO26 | `BTN2` |
+| 3 vermelho | GPIO27 | `BTN3` |
 
 Cada botão vai entre o pino e o **GND** (sem resistor, o pull-up é interno).
 
 ## Como rodar
 
-### 1. Gravar o ESP32 (uma vez por controle)
+### 1. Gravar o ESP32
 
 1. No Arduino IDE, instale o core **ESP32** e a biblioteca **NimBLE-Arduino**.
 2. Crie o `.env` e preencha:
@@ -32,48 +33,44 @@ Cada botão vai entre o pino e o **GND** (sem resistor, o pull-up é interno).
    | -------- | ------- |
    | `WIFI_SSID` / `WIFI_PASSWORD` | rede Wi-Fi 2,4 GHz (só para o OTA) |
    | `MANIFEST_URL` | URL raw do `version.json` |
-   | `JOGADOR` | `1` ou `2` — um valor diferente em cada controle |
 3. Gere o `secrets.h` e grave o `ota_boot/ota_boot.ino` pela USB (placa **ESP32 Dev Module**):
    ```bash
    ./gerar_secrets.sh --usb
    ```
-4. No Serial Monitor (115200) deve aparecer `Bluetooth anunciando como NEXT2026-J1`.
+4. No Serial Monitor (115200) deve aparecer `Bluetooth anunciando como NEXT2026-botoes`.
 
-### 2. Abrir o jogo
+### 2. Compilar e abrir o jogo (Windows)
 
-Com o Bluetooth do PC ligado:
-
-```bash
-cd jogo
-pip install -r requirements.txt
-python jogo.py
-```
-
-O rodapé muda de "procurando controles..." para **"Bluetooth: 1 controle(s)"**. Aperte os botões e o número do jogador sobe.
-
-### Testar sem o ESP32
+Precisa de CMake e do Visual Studio Build Tools (C++). Na primeira vez baixa o raylib sozinho.
 
 ```bash
-cd jogo
-python -m unittest test_bluetooth -v
+cd desafio-planta
+cmake -B build
+cmake --build build --config Release
+build\Release\desafio_planta.exe
 ```
 
-Testa o receptor Bluetooth (com BLE simulado) e as regras do jogo.
+Com o Bluetooth do PC ligado, o canto da tela muda de "Bluetooth: procurando..." para **"Bluetooth: conectado"**. Mais detalhes (regras, fotos, Linux/macOS) em [`desafio-planta/README.md`](desafio-planta/README.md).
+
+### Testar sem os botões
+
+- **Teclado**: teclas 1, 2 e 3 no jogo.
+- **Pelo ESP32**: com ele ligado na USB, digite `1`, `2` ou `3` no Serial Monitor. É como apertar o botão: o ESP32 manda `BTN1`/`BTN2`/`BTN3` pelo Bluetooth.
+- **Lógica do jogo**: `g++ -std=c++17 desafio-planta/tests/test_game.cpp -o test_game && ./test_game`
 
 ## Problemas comuns
 
 | Sintoma | O que fazer |
 | ------- | ----------- |
-| Jogo fica em "procurando controles..." | Ligue o Bluetooth do PC. O ESP32 só começa a anunciar ~10 s depois de ligar (espera o Wi-Fi). Confira com o app **nRF Connect** no celular se `NEXT2026-J1` aparece. |
-| `Bluetooth indisponivel` no terminal | Bluetooth do Windows desligado ou sem adaptador BLE (precisa de Bluetooth 4.0+). |
-| `(jogo nao conectado, nao enviado)` no Serial | O jogo ainda não conectou. Abra o jogo e espere o contador de controles. |
-| Nenhuma linha `Botao ...` ao apertar | Botão fora do pino D18/D19/D21 ou sem o outro lado no GND. Teste com um fio: encoste D18 no GND. |
+| Jogo fica em "Bluetooth: procurando..." | Ligue o Bluetooth do PC. O ESP32 só começa a anunciar ~10 s depois de ligar (espera o Wi-Fi). Confira com o app **nRF Connect** no celular se `NEXT2026-botoes` aparece. |
+| Nada acontece ao apertar, e o Serial não mostra `BTN1`... | Botão fora do pino GPIO25/26/27 ou sem o outro lado no GND. Teste com um fio: encoste o GPIO25 no GND. |
+| Serial mostra `(jogo nao conectado por Bluetooth, nao enviado)` | O jogo ainda não conectou. Abra o jogo e espere o "Bluetooth: conectado". |
 | `could not open port` / "acesso negado" na COM | Algo já usa a porta (Serial Monitor aberto). Feche e tente de novo. |
 | Falha ao gravar | Segure o botão **BOOT** da placa durante o "Connecting...". Confira a porta COM. |
 | O ESP32 voltou a uma versão antiga | O OTA baixou o `.bin` do `version.json`. Publique o firmware novo (abaixo) ou grave de novo pela USB. |
-| Jogador errado no controle | O `JOGADOR` do `.env` vale na hora de gravar. Ajuste, rode `./gerar_secrets.sh --usb` e grave de novo. |
-| Dois controles somam no mesmo jogador | Os dois foram gravados com o mesmo `JOGADOR`. Use `1` e `2`. |
 | Serial Monitor reinicia a placa | Normal: abrir a porta serial reseta o ESP32. Espere ~10 s. |
+| Erro de compilação com `cmake` | Rode pelo "Developer Command Prompt for VS" ou instale o CMake e as ferramentas C++ do Visual Studio Build Tools. |
+| Linux/macOS | O Bluetooth nativo só existe no Windows. Use o jogo por USB: `./desafio_planta /dev/ttyUSB0` (o ESP32 também escreve `BTN1`... na serial). |
 
 ## Publicar uma nova versão (OTA)
 
@@ -86,20 +83,20 @@ Na próxima vez que for ligado, o ESP32 se atualiza. O firmware ocupa ~98% da pa
 
 ## Protocolo Bluetooth
 
-O ESP32 é um periférico BLE chamado `NEXT2026-J<jogador>`.
+O ESP32 é um periférico BLE chamado `NEXT2026-botoes`.
 
 | | UUID |
 | --- | --- |
 | Serviço | `6e400001-b5a3-f393-e0a9-e50e24dcca9e` |
 | Característica (notify) | `6e400003-b5a3-f393-e0a9-e50e24dcca9e` |
 
-Cada notificação é o texto `<letra><jogador>` (`G1`, `Y2`, `E1`...).
+Cada notificação é o texto `BTN1`, `BTN2` ou `BTN3`.
 
 ## Estrutura
 
 ```
-├── ota_boot/ota_boot.ino   # firmware do ESP32
-├── jogo/                   # jogo (pygame-ce + bleak) e testes
+├── ota_boot/ota_boot.ino   # firmware do ESP32 (botões → Bluetooth)
+├── desafio-planta/         # o jogo (C++ / raylib) — src/ble.cpp é o receptor Bluetooth
 ├── .env.example            # modelo de configuração
 ├── gerar_secrets.sh        # gera ota_boot/secrets.h a partir do .env
 ├── version.json            # versão disponível + URL do .bin
@@ -108,4 +105,4 @@ Cada notificação é o texto `<letra><jogador>` (`G1`, `Y2`, `E1`...).
 
 ## Status
 
-O firmware compila e grava, o ESP32 anuncia e o jogo conecta nele (testado com hardware real). O envio por **botões físicos** ainda não foi testado, só o receptor com BLE simulado.
+Testado com um ESP32 real (firmware 3.1) e o jogo no Windows: o jogo conecta por Bluetooth, mostra "Bluetooth: conectado" e reage aos `BTN1`/`BTN2`/`BTN3` (simulados pelo Serial Monitor). Os **botões físicos** ainda não foram testados.
