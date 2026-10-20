@@ -60,16 +60,52 @@ static void testeVoltaDoContador() {
     CHECK(j.resposta(0).unidade == 0);
 }
 
-static void testeCriticidade() {
+// Criticidade é uma corrida: o primeiro clique decide a rodada e o outro jogador perde a vez.
+static void testeCriticidadeCorrida() {
     Jogo j;
-    j.definirRodadas({{"x.jpg", 27}});
+    j.definirRodadas({{"x.jpg", 27}});  // 27 cm = Alerta
     j.apertar(Botao::B2);  // amarelo inicia o modo Criticidade
     CHECK(j.modo() == Modo::Criticidade);
-    j.apertar(Botao::B3);  // J1: Crítico (errado) - já confirma
-    CHECK(j.jogadorDaVez() == 1);
-    j.apertar(Botao::B2);  // J2: Alerta (certo)
+
+    // J1 aperta primeiro e erra (Crítico): J2 perde a vez e ninguém pontua.
+    j.apertar(Botao::B3);
+    CHECK(j.fase() == Fase::Revelacao);
+    CHECK(j.resposta(0).respondeuCrit && j.resposta(0).crit == Crit::Critico);
+    CHECK(!j.resposta(1).respondeuCrit && j.resposta(1).perdeuVez);
+    CHECK(!j.resposta(0).perdeuVez);
+    CHECK(j.placar(0) == 0 && j.placar(1) == 0);
+    CHECK(!j.ganhouRodada(0) && !j.ganhouRodada(1));
+}
+
+static void testeCriticidadeSegundoJogadorPrimeiro() {
+    Jogo j;
+    j.definirRodadas({{"x.jpg", 27}, {"y.jpg", 5}});
+    j.apertar(Botao::B2);
+    // J2 (botões 4-6) aperta primeiro e acerta: ponto para ele, J1 perde a vez.
+    Crit certo = j.rodada().crit();
+    j.apertar(certo == Crit::Ok ? Botao::B4 : certo == Crit::Alerta ? Botao::B5 : Botao::B6);
     CHECK(j.fase() == Fase::Revelacao);
     CHECK(j.placar(0) == 0 && j.placar(1) == 1);
+    CHECK(j.ganhouRodada(1) && !j.ganhouRodada(0));
+    CHECK(j.resposta(0).perdeuVez);
+    // na próxima rodada o estado de perdeu-a-vez é zerado
+    j.atualizar(1.5f);
+    j.apertar(Botao::B1);
+    CHECK(j.fase() == Fase::Jogando);
+    CHECK(!j.resposta(0).perdeuVez && !j.resposta(1).perdeuVez);
+}
+
+// Os botões do jogador 2 também funcionam no início e no modo Altura (quem está na vez).
+static void testeBotoesDoJogador2NoInicioENaAltura() {
+    Jogo j;
+    j.definirRodadas({{"x.jpg", 27}});
+    j.apertar(Botao::B4);  // verde do J2 inicia a Altura
+    CHECK(j.modo() == Modo::Altura && j.fase() == Fase::Jogando);
+    j.apertar(Botao::B4);  // dezena
+    j.apertar(Botao::B5);  // unidade
+    CHECK(j.resposta(0).cm() == 11);
+    j.apertar(Botao::B6);  // confirmar
+    CHECK(j.jogadorDaVez() == 1);
 }
 
 static void testeEmpateEPontosDuplos() {
@@ -98,8 +134,7 @@ static void testePartidaCompletaEAvancoAutomatico() {
     CHECK(j.totalRodadas() == RODADAS_POR_PARTIDA);
     for (int i = 0; i < RODADAS_POR_PARTIDA; ++i) {
         CHECK(j.fase() == Fase::Jogando);
-        j.apertar(Botao::B1);
-        j.apertar(Botao::B1);
+        j.apertar(Botao::B1);  // corrida: um clique decide a rodada
         CHECK(j.fase() == Fase::Revelacao);
         j.atualizar(TEMPO_AUTO_REVELACAO + 0.1f);  // avança sozinho
     }
@@ -141,7 +176,9 @@ static void testeFaixas() {
 int main() {
     testeAlturaComoNoPdf();
     testeVoltaDoContador();
-    testeCriticidade();
+    testeCriticidadeCorrida();
+    testeCriticidadeSegundoJogadorPrimeiro();
+    testeBotoesDoJogador2NoInicioENaAltura();
     testeEmpateEPontosDuplos();
     testePartidaCompletaEAvancoAutomatico();
     testeBotaoAntesDoTempoMinimoEIgnorado();

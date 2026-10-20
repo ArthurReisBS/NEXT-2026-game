@@ -23,8 +23,15 @@ constexpr float TEMPO_AUTO_VENCEDOR = 20.0f;  // s até voltar ao início
 // ---------------------------------------------------------------- tipos
 enum class Modo { Altura, Criticidade };
 enum class Crit { Ok, Alerta, Critico };
-enum class Botao { B1 = 1, B2 = 2, B3 = 3 };  // verde, amarelo, vermelho (GPIO 25, 26, 27)
+// Botões 1-3 (verde, amarelo, vermelho) são do jogador 1; 4-6 (mesmas cores) são do jogador 2.
+// No modo Altura os dois conjuntos fazem o mesmo (quem está na vez usa o que preferir);
+// na Criticidade cada conjunto responde por um jogador (corrida: o primeiro clique vale).
+enum class Botao { B1 = 1, B2 = 2, B3 = 3, B4 = 4, B5 = 5, B6 = 6 };
 enum class Fase { Inicio, Jogando, Revelacao, Vencedor };
+
+inline int jogadorDoBotao(Botao b) { return static_cast<int>(b) <= 3 ? 0 : 1; }
+// Qual das 3 cores é: 1 = verde, 2 = amarelo, 3 = vermelho
+inline int corDoBotao(Botao b) { return (static_cast<int>(b) - 1) % 3 + 1; }
 
 inline Crit classificar(int cm) {
     if (cm >= LIMITE_CRITICO_CM) return Crit::Critico;
@@ -53,6 +60,7 @@ struct Resposta {
     Crit crit = Crit::Ok;
     bool respondeuCrit = false;  // só importa no modo Criticidade
     bool travada = false;        // jogador já confirmou
+    bool perdeuVez = false;      // Criticidade: o outro jogador apertou primeiro
     int cm() const { return dezena * 10 + unidade; }
     // O que aparece no cartão: no modo Altura a cor sai da altura digitada.
     Crit critExibida(Modo m) const { return m == Modo::Altura ? classificar(cm()) : crit; }
@@ -69,8 +77,8 @@ public:
     void apertar(Botao b) {
         switch (fase_) {
             case Fase::Inicio:
-                if (b == Botao::B1) iniciar(Modo::Altura);
-                else if (b == Botao::B2) iniciar(Modo::Criticidade);
+                if (corDoBotao(b) == 1) iniciar(Modo::Altura);
+                else if (corDoBotao(b) == 2) iniciar(Modo::Criticidade);
                 break;
             case Fase::Jogando: jogar(b); break;
             case Fase::Revelacao:
@@ -135,16 +143,22 @@ private:
     }
 
     void jogar(Botao b) {
-        Resposta& r = resp_[vez_];
+        const int cor = corDoBotao(b);
         if (modo_ == Modo::Altura) {
-            if (b == Botao::B1) r.dezena = (r.dezena + 1) % 10;
-            else if (b == Botao::B2) r.unidade = (r.unidade + 1) % 10;
+            Resposta& r = resp_[vez_];
+            if (cor == 1) r.dezena = (r.dezena + 1) % 10;
+            else if (cor == 2) r.unidade = (r.unidade + 1) % 10;
             else travar();
         } else {
-            // Criticidade: o botão escolhido já é a resposta final.
-            r.crit = b == Botao::B1 ? Crit::Ok : b == Botao::B2 ? Crit::Alerta : Crit::Critico;
+            // Criticidade é uma corrida: o primeiro clique de qualquer jogador é a resposta final
+            // dele e o outro perde a vez nesta rodada.
+            const int j = jogadorDoBotao(b);
+            Resposta& r = resp_[j];
+            r.crit = cor == 1 ? Crit::Ok : cor == 2 ? Crit::Alerta : Crit::Critico;
             r.respondeuCrit = true;
-            travar();
+            r.travada = true;
+            resp_[1 - j].perdeuVez = true;
+            avaliar();
         }
     }
 
@@ -162,8 +176,8 @@ private:
             ganhou_[0] = d0 <= d1;  // empate: os dois pontuam
             ganhou_[1] = d1 <= d0;
         } else {
-            ganhou_[0] = resp_[0].crit == r.crit();
-            ganhou_[1] = resp_[1].crit == r.crit();
+            // só pontua quem respondeu (o outro perdeu a vez); errou = ninguém pontua
+            for (int j = 0; j < 2; ++j) ganhou_[j] = resp_[j].respondeuCrit && resp_[j].crit == r.crit();
         }
         for (int j = 0; j < 2; ++j) placar_[j] += ganhou_[j] ? 1 : 0;
         ++eventoRev_;

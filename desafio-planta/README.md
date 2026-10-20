@@ -11,19 +11,22 @@ O ESP32 não tem tela, então a interface roda no computador e o ESP32 só avisa
 
 ## Como se joga
 
-Dois jogadores se revezam no mesmo conjunto de 3 botões (o Jogador 1 responde, depois o Jogador 2). As respostas ficam escondidas ("Pronto!") até os dois responderem; aí a foto revela a altura real e a criticidade. São 5 rodadas por partida.
+Cada jogador tem 3 botões (jogador 1 = BTN1-3, jogador 2 = BTN4-6; no teclado, 1 2 3 e 8 9 0). São 5 rodadas por partida.
+
+- **Altura**: os jogadores se revezam (o Jogador 1 responde, depois o Jogador 2). As respostas ficam escondidas ("Pronto!") até os dois responderem; aí a foto revela a altura real. Qualquer um dos dois conjuntos de botões serve para quem está na vez.
+- **Criticidade (corrida)**: os dois jogam ao mesmo tempo. **Quem apertar primeiro responde e o outro perde a vez** naquela rodada (o cartão dele fica cinza com "perdeu a vez"). Acertou a faixa = 1 ponto; errou = ninguém pontua.
 
 Na tela inicial, o botão **verde** inicia o minigame de altura e o **amarelo** inicia o de criticidade.
 
-| Botão | Minigame 1: altura | Minigame 2: criticidade |
-|---|---|---|
-| BTN1 verde (GPIO25) | +1 na dezena (0 a 9, volta ao 0) | OK |
-| BTN2 amarelo (GPIO26) | +1 na unidade (0 a 9, volta ao 0) | Alerta |
-| BTN3 vermelho (GPIO27) | confirmar | Crítico |
+| Botão (J1 / J2) | Pino (J1 / J2) | Minigame 1: altura | Minigame 2: criticidade |
+|---|---|---|---|
+| verde (BTN1 / BTN4) | GPIO25 / GPIO32 | +1 na dezena (0 a 9, volta ao 0) | OK |
+| amarelo (BTN2 / BTN5) | GPIO26 / GPIO33 | +1 na unidade (0 a 9, volta ao 0) | Alerta |
+| vermelho (BTN3 / BTN6) | GPIO27 / GPIO23 | confirmar | Crítico |
 
-No minigame 2 o botão apertado já é a resposta final, porque não sobra botão para "confirmar".
+Na criticidade o botão apertado já é a resposta final, porque não sobra botão para "confirmar".
 
-Pontuação: na altura, ganha o ponto quem chutou mais perto (empate, os dois pontuam). Na criticidade, ganha o ponto quem acertou a faixa. Depois da revelação, qualquer botão avança (ou avança sozinho em 7 s).
+Pontuação: na altura, ganha o ponto quem chutou mais perto (empate, os dois pontuam). Na criticidade, ganha o ponto quem apertou primeiro e acertou a faixa. Depois da revelação, qualquer botão avança (ou avança sozinho em 7 s).
 
 Faixas de criticidade (em `src/game.hpp`, **ajuste para as faixas reais do EcoTrack**):
 OK abaixo de 20 cm, Alerta de 20 a 29 cm, Crítico a partir de 30 cm.
@@ -32,7 +35,7 @@ OK abaixo de 20 cm, Alerta de 20 a 29 cm, Crítico a partir de 30 cm.
 
 O firmware fica em `../ota_boot/ota_boot.ino` (botões nos GPIO25/26/27, envia `BTN1`/`BTN2`/`BTN3` por Bluetooth). O passo a passo para gravar está no [README da raiz](../README.md).
 
-Para testar: no Serial Monitor (115200), apertar cada botão mostra `BTN1`, `BTN2` ou `BTN3`; digitar `1`, `2` ou `3` faz o mesmo sem os botões. Feche o Serial Monitor antes de abrir o jogo por serial (só um programa usa a porta por vez).
+Para testar: no Serial Monitor (115200), apertar cada botão mostra `BTN1`, `BTN2` ou `BTN3`; digitar `1` a `6` faz o mesmo sem os botões. Feche o Serial Monitor antes de abrir o jogo por serial (só um programa usa a porta por vez).
 
 ## 2. Compilar a interface
 
@@ -56,7 +59,7 @@ build\Release\desafio_planta.exe COM5        (Windows; veja a porta no Gerenciad
 
 - Sem argumento: usa a porta de `assets/porta.txt`, se tiver uma; senão procura o ESP32 por **Bluetooth** (Windows). Passar `COMx` força a serial USB (a única opção no Linux/macOS).
 - `--teclado` desliga o Bluetooth e a serial.
-- Sem ESP32: use o **teclado** (teclas 1, 2 e 3 fazem o papel dos botões). O teclado funciona sempre, mesmo com o ESP32 ligado.
+- Sem ESP32: use o **teclado** (jogador 1 = teclas 1, 2 e 3; jogador 2 = teclas 8, 9 e 0). O teclado funciona sempre, mesmo com o ESP32 ligado.
 - F11 alterna tela cheia; ESC sai.
 
 ## Colocando as fotos reais

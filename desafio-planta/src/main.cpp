@@ -1,5 +1,5 @@
 // Desafio EcoTrack - interface dos dois minigames.
-// Recebe os botões do ESP32 pela USB (linhas BTN1/BTN2/BTN3) ou do teclado (1, 2, 3).
+// Recebe os botões do ESP32 pela USB (linhas BTN1..BTN6) ou do teclado.
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -331,13 +331,16 @@ void Legenda(Rectangle r, const char* a, const char* b, const char* c, float alf
 
 void Cartao(const Jogo& jogo, int j, Rectangle r) {
     const bool rev = jogo.fase() == Fase::Revelacao;
-    const bool vez = jogo.fase() == Fase::Jogando && jogo.jogadorDaVez() == j;
+    const bool altura = jogo.modo() == Modo::Altura;
+    // Altura: só quem está na vez joga. Criticidade (corrida): os dois jogam ao mesmo tempo.
+    const bool vez = jogo.fase() == Fase::Jogando && (!altura || jogo.jogadorDaVez() == j);
     const Resposta& rp = jogo.resposta(j);
     const bool mascarada = jogo.fase() == Fase::Jogando && rp.travada;
-    const bool altura = jogo.modo() == Modo::Altura;
+    const bool perdeu = rev && rp.perdeuVez;  // o outro jogador apertou primeiro
 
     Color fill = CARTAO, borda = CARTAO_BORDA;
-    if (rev) {
+    if (perdeu) { fill = Color{222, 228, 238, 255}; borda = Color{150, 160, 175, 255}; }
+    else if (rev) {
         if (jogo.ganhouRodada(j)) { fill = Color{190, 255, 125, 255}; borda = VERDE_ESC; }
         else { fill = Color{255, 140, 140, 255}; borda = VERMELHO; }
     }
@@ -354,11 +357,12 @@ void Cartao(const Jogo& jogo, int j, Rectangle r) {
         DrawCircleV(ctr, 70, Color{150, 175, 205, 255});
         Visto(ctr.x, ctr.y, 80, WHITE);
         Texto("Pronto!", cx, r.y + 252, 40, NAVY);
-    } else if (!altura && !rp.respondeuCrit && !rev) {
+    } else if (!altura && !rp.respondeuCrit) {
         DrawCircleV(ctr, 70, Color{236, 244, 253, 255});
         DrawCircleLines(static_cast<int>(ctr.x), static_cast<int>(ctr.y), 70, CARTAO_BORDA);
         Texto("?", cx, ctr.y - 34, 70, CARTAO_BORDA);
-        Texto(vez ? "escolha" : "aguardando", cx, r.y + 252, 36, Fade(NAVY, 0.55f));
+        const char* msg = perdeu ? "perdeu a vez" : vez ? "aperte rápido!" : "aguardando";
+        Texto(msg, cx, r.y + 252, 36, Fade(NAVY, perdeu ? 0.75f : 0.55f));
     } else {
         Crit c = rp.critExibida(jogo.modo());
         DrawCircleV(ctr, 70, CorCrit(c));
@@ -381,7 +385,9 @@ void Cartao(const Jogo& jogo, int j, Rectangle r) {
     // rodapé
     if (vez && altura) Legenda(r, "dezena", "unidade", "confirmar", 1.0f);
     else if (vez) Legenda(r, "OK", "Alerta", "Crítico", 1.0f);
-    else if (rev) {
+    else if (perdeu) {
+        // sem ícone: o jogador não respondeu
+    } else if (rev) {
         if (jogo.ganhouRodada(j)) Visto(cx, r.y + r.height - 52, 56, VERDE_ESC);
         else Xis(cx, r.y + r.height - 52, 56, Color{170, 20, 25, 255});
     } else if (!mascarada && jogo.fase() == Fase::Jogando) {
@@ -391,7 +397,7 @@ void Cartao(const Jogo& jogo, int j, Rectangle r) {
     // carinhas da revelação (como no PDF)
     if (rev) {
         float fx = j == 0 ? r.x + 8 : r.x + r.width - 8;
-        Rosto(fx, r.y + 10, 42, jogo.ganhouRodada(j) ? 1 : -1);
+        Rosto(fx, r.y + 10, 42, perdeu ? 0 : jogo.ganhouRodada(j) ? 1 : -1);
     }
 }
 
@@ -438,6 +444,8 @@ void TelaJogo(const Jogo& jogo, const Foto& foto) {
         Texto(nomeCrit(r.crit()), 640, 436, 40, Fade(CorCrit(r.crit()), a));
         Texto(TextFormat("%dcm", r.alturaCm), 640, 490, 60, Fade(NAVY, a));
         Texto("aperte qualquer botão para continuar", W / 2.0f, 690, 24, Fade(NAVY, 0.55f));
+    } else if (jogo.modo() == Modo::Criticidade) {
+        Texto("Quem apertar primeiro responde. O outro perde a vez!", W / 2.0f, 683, 28, NAVY);
     } else {
         Texto(TextFormat("Vez do Jogador %d", jogo.jogadorDaVez() + 1), W / 2.0f, 683, 28, NAVY);
     }
@@ -494,7 +502,7 @@ int main(int argc, char** argv) {
     PortaSerial porta;
     float tentativa = 0.0f;
     if (!nomePorta.empty() && !porta.abrir(nomePorta))
-        std::printf("Não consegui abrir a porta '%s'. Usando o teclado (1, 2, 3).\n", nomePorta.c_str());
+        std::printf("Não consegui abrir a porta '%s'. Usando o teclado.\n", nomePorta.c_str());
 
     // Sem porta serial e sem --teclado: o ESP32 chega por Bluetooth (Windows).
     const bool soTeclado = argc > 1 && std::string(argv[1]) == "--teclado";
@@ -510,9 +518,13 @@ int main(int argc, char** argv) {
         float dt = GetFrameTime();
 
         // --- entrada: teclado e ESP32
+        // teclado: jogador 1 = 1 · 2 · 3, jogador 2 = 8 · 9 · 0
         if (IsKeyPressed(KEY_ONE) || IsKeyPressed(KEY_KP_1)) jogo.apertar(Botao::B1);
         if (IsKeyPressed(KEY_TWO) || IsKeyPressed(KEY_KP_2)) jogo.apertar(Botao::B2);
         if (IsKeyPressed(KEY_THREE) || IsKeyPressed(KEY_KP_3)) jogo.apertar(Botao::B3);
+        if (IsKeyPressed(KEY_EIGHT) || IsKeyPressed(KEY_KP_8)) jogo.apertar(Botao::B4);
+        if (IsKeyPressed(KEY_NINE) || IsKeyPressed(KEY_KP_9)) jogo.apertar(Botao::B5);
+        if (IsKeyPressed(KEY_ZERO) || IsKeyPressed(KEY_KP_0)) jogo.apertar(Botao::B6);
         if (IsKeyPressed(KEY_F11)) ToggleFullscreen();
 
         if (!nomePorta.empty() && !porta.aberta()) {  // tenta reconectar a cada 2 s
@@ -524,6 +536,9 @@ int main(int argc, char** argv) {
             if (l == "BTN1") jogo.apertar(Botao::B1);
             else if (l == "BTN2") jogo.apertar(Botao::B2);
             else if (l == "BTN3") jogo.apertar(Botao::B3);
+            else if (l == "BTN4") jogo.apertar(Botao::B4);
+            else if (l == "BTN5") jogo.apertar(Botao::B5);
+            else if (l == "BTN6") jogo.apertar(Botao::B6);
         };
         while (porta.lerLinha(linha)) tratar(linha);
         while (usarBle && ble.lerLinha(linha)) tratar(linha);
@@ -566,9 +581,9 @@ int main(int argc, char** argv) {
             case Fase::Vencedor: TelaVencedor(jogo, logo, temLogo); break;
         }
         DesenharConfete();
-        if (usarBle) Status(ble.conectado(), ble.conectado() ? "Bluetooth: conectado" : "Bluetooth: procurando... (teclado: 1 · 2 · 3)");
+        if (usarBle) Status(ble.conectado(), ble.conectado() ? "Bluetooth: conectado" : "Bluetooth: procurando... (teclado: 1,2,3 / 8,9,0)");
         else if (porta.aberta()) Status(true, "ESP32: " + nomePorta);
-        else Status(false, "teclado: 1 · 2 · 3");
+        else Status(false, "teclado: J1 1,2,3 | J2 8,9,0");
         rlPopMatrix();
         EndDrawing();
     }

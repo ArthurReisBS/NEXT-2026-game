@@ -13,7 +13,7 @@ enum ResultadoOTA {
   OTA_GRAVACAO_FALHOU
 };
 
-const char *VERSAO_FIRMWARE = "3.1";
+const char *VERSAO_FIRMWARE = "3.2";
 
 const char *URL_MANIFESTO = MANIFEST_URL;
 
@@ -35,7 +35,11 @@ struct Botao {
 Botao botoes[] = {
   {25, 1, HIGH, HIGH, 0},  // BTN1 verde
   {26, 2, HIGH, HIGH, 0},  // BTN2 amarelo
-  {27, 3, HIGH, HIGH, 0}   // BTN3 vermelho
+  {27, 3, HIGH, HIGH, 0},  // BTN3 vermelho
+  // jogador 2 (usado na corrida da Criticidade)
+  {32, 4, HIGH, HIGH, 0},  // BTN4 verde
+  {33, 5, HIGH, HIGH, 0},  // BTN5 amarelo
+  {23, 6, HIGH, HIGH, 0}   // BTN6 vermelho
 };
 const uint8_t QUANTIDADE_BOTOES = sizeof(botoes) / sizeof(botoes[0]);
 
@@ -259,7 +263,7 @@ void iniciarBluetooth() {
   Serial.println(nome);
 }
 
-// Manda "BTN1", "BTN2" ou "BTN3", que e o que o jogo entende. A mesma linha sai pela
+// Manda "BTN1" a "BTN6" (1-3 = jogador 1, 4-6 = jogador 2), que e o que o jogo entende. A mesma linha sai pela
 // USB, para o jogo tambem funcionar por serial (Linux/macOS).
 void enviarBotao(uint8_t numero) {
   String mensagem = "BTN" + String(numero);
@@ -272,11 +276,11 @@ void enviarBotao(uint8_t numero) {
   caracteristicaBotoes->notify();
 }
 
-// Para testar sem os botoes: digitar 1, 2 ou 3 no Serial Monitor aperta o botao correspondente.
+// Para testar sem os botoes: digitar 1 a 6 no Serial Monitor aperta o botao correspondente.
 void lerTestePelaSerial() {
   while (Serial.available()) {
     char c = Serial.read();
-    if (c >= '1' && c <= '3') enviarBotao(c - '0');
+    if (c >= '1' && c <= '6') enviarBotao(c - '0');
   }
 }
 
