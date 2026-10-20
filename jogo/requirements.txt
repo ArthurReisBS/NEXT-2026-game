@@ -1,2 +1,2 @@
 pygame-ce
-paho-mqtt
+bleak

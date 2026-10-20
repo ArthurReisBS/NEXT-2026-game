@@ -1,40 +1,14 @@
-# Jogo de dois jogadores controlado pelos botoes do ESP32 via MQTT.
+# Jogo de dois jogadores controlado pelos botoes do ESP32 via Bluetooth (BLE).
 # Cada mensagem e letra + jogador: G1/G2 somam 1, Y1/Y2 somam 10, E1/E2 confirmam (Enter).
-# Para testar sem o ESP32, use ../teste_botoes, que publica as mesmas mensagens.
-import os
-import queue
-
-import paho.mqtt.client as mqtt
 import pygame
 
-BROKER = os.environ.get("MQTT_BROKER", "broker.hivemq.com")
-TOPICO = os.environ.get("MQTT_TOPIC", "next2026/game/botoes")
+from bluetooth import ReceptorBluetooth
 
 LARGURA, ALTURA = 480, 320
 COR_FUNDO = (24, 24, 32)
 COR_CAMPO = (245, 245, 245)
 COR_TEXTO = (20, 20, 20)
 COR_INFO = (180, 180, 190)
-
-letras_recebidas = queue.Queue()
-
-
-def ao_conectar(cliente, userdata, flags, reason_code, properties):
-    cliente.subscribe(TOPICO)
-
-
-def ao_receber(cliente, userdata, msg):
-    # Roda na thread do MQTT: so enfileira, quem mexe na tela e o loop do jogo.
-    letras_recebidas.put(msg.payload.decode().strip().upper())
-
-
-def iniciar_mqtt():
-    cliente = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-    cliente.on_connect = ao_conectar
-    cliente.on_message = ao_receber
-    cliente.connect_async(BROKER, 1883)
-    cliente.loop_start()
-    return cliente
 
 
 class Jogador:
@@ -62,7 +36,7 @@ class Jogo:
             self.jogadores[mensagem[1]].aplicar(mensagem[0])
 
 
-def desenhar(tela, jogo, fonte_campo, fonte_info, conectado):
+def desenhar(tela, jogo, fonte_campo, fonte_info, conectados):
     tela.fill(COR_FUNDO)
 
     for i, (numero, jogador) in enumerate(jogo.jogadores.items()):
@@ -81,7 +55,7 @@ def desenhar(tela, jogo, fonte_campo, fonte_info, conectado):
             info = fonte_info.render(f"Confirmado: {jogador.ultimo_confirmado}", True, COR_INFO)
             tela.blit(info, info.get_rect(center=(centro_x, campo.bottom + 40)))
 
-    status = "MQTT conectado" if conectado else "MQTT desconectado"
+    status = f"Bluetooth: {conectados} controle(s)" if conectados else "Bluetooth: procurando controles..."
     rodape = fonte_info.render(f"{status}  |  G +1   Y +10   E enter", True, COR_INFO)
     tela.blit(rodape, rodape.get_rect(center=(LARGURA // 2, ALTURA - 24)))
 
@@ -96,7 +70,8 @@ def main():
     fonte_info = pygame.font.Font(None, 26)
     relogio = pygame.time.Clock()
 
-    cliente = iniciar_mqtt()
+    bluetooth = ReceptorBluetooth()
+    bluetooth.iniciar()
     jogo = Jogo()
 
     rodando = True
@@ -105,14 +80,13 @@ def main():
             if evento.type == pygame.QUIT:
                 rodando = False
 
-        while not letras_recebidas.empty():
-            jogo.aplicar(letras_recebidas.get())
+        while not bluetooth.mensagens.empty():
+            jogo.aplicar(bluetooth.mensagens.get())
 
-        desenhar(tela, jogo, fonte_campo, fonte_info, cliente.is_connected())
+        desenhar(tela, jogo, fonte_campo, fonte_info, bluetooth.quantidade_conectados)
         relogio.tick(60)
 
-    cliente.loop_stop()
-    cliente.disconnect()
+    bluetooth.parar()
     pygame.quit()
 
 

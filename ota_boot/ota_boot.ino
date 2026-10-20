@@ -2,7 +2,7 @@
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include <Update.h>
-#include <PubSubClient.h>
+#include <NimBLEDevice.h>
 #include "secrets.h"
 
 enum ResultadoOTA {
@@ -13,13 +13,16 @@ enum ResultadoOTA {
   OTA_GRAVACAO_FALHOU
 };
 
-const char *VERSAO_FIRMWARE = "2.0";
+const char *VERSAO_FIRMWARE = "3.0";
 
 const char *URL_MANIFESTO = MANIFEST_URL;
 
-const uint16_t PORTA_MQTT = 1883;
-const unsigned long INTERVALO_RECONEXAO_MS = 5000UL;
 const unsigned long DEBOUNCE_MS = 30UL;
+
+// O jogo procura o ESP32 por este servico e recebe as letras como notificacoes
+// da caracteristica. Os mesmos UUIDs estao em jogo/jogo.py.
+const char *UUID_SERVICO = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+const char *UUID_CARACTERISTICA = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
 
 struct Botao {
   uint8_t pino;
@@ -36,9 +39,7 @@ Botao botoes[] = {
 };
 const uint8_t QUANTIDADE_BOTOES = sizeof(botoes) / sizeof(botoes[0]);
 
-WiFiClient clienteRede;
-PubSubClient mqtt(clienteRede);
-unsigned long ultimaTentativaMs = 0;
+NimBLECharacteristic *caracteristicaBotoes = nullptr;
 
 bool conectarWiFi(unsigned long timeoutMs) {
   Serial.print("Conectando ao Wi-Fi");
@@ -213,43 +214,62 @@ void configurarBotoes() {
   }
 }
 
-bool conectarMQTT() {
-  String idCliente = "next2026-" + WiFi.macAddress();
-  Serial.print("Conectando ao broker MQTT ");
-  Serial.print(MQTT_BROKER);
-  Serial.print("... ");
-  if (mqtt.connect(idCliente.c_str())) {
-    Serial.println("conectado!");
-    return true;
+class CallbacksServidor : public NimBLEServerCallbacks {
+  void onConnect(NimBLEServer *servidor, NimBLEConnInfo &info) override {
+    Serial.println("Jogo conectado por Bluetooth.");
   }
-  Serial.print("falhou, estado ");
-  Serial.println(mqtt.state());
-  return false;
+
+  void onDisconnect(NimBLEServer *servidor, NimBLEConnInfo &info, int motivo) override {
+    Serial.println("Jogo desconectado, anunciando de novo...");
+    NimBLEDevice::startAdvertising();
+  }
+};
+
+// Depois da checagem de OTA o Wi-Fi nao e mais usado: desliga para o radio ficar so no Bluetooth.
+void desligarWiFi() {
+  WiFi.disconnect(true, false);
+  WiFi.mode(WIFI_OFF);
 }
 
-// Tenta reconectar sem travar o loop: no maximo uma tentativa a cada 5 s.
-void manterConexoes(unsigned long agora) {
-  if (WiFi.status() == WL_CONNECTED && mqtt.connected()) return;
-  if (agora - ultimaTentativaMs < INTERVALO_RECONEXAO_MS) return;
-  ultimaTentativaMs = agora;
+void iniciarBluetooth() {
+  String nome = String("NEXT2026-J") + JOGADOR;
+  NimBLEDevice::init(nome.c_str());
 
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("Wi-Fi caiu, reconectando...");
-    WiFi.reconnect();
-    return;
-  }
-  conectarMQTT();
+  NimBLEServer *servidor = NimBLEDevice::createServer();
+  servidor->setCallbacks(new CallbacksServidor());
+
+  NimBLEService *servico = servidor->createService(UUID_SERVICO);
+  caracteristicaBotoes = servico->createCharacteristic(
+    UUID_CARACTERISTICA, NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
+  servico->start();
+
+  // O UUID de 128 bits ocupa quase todo o anuncio, entao o nome vai na resposta de scan.
+  NimBLEAdvertisementData anuncio;
+  anuncio.setFlags(BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP);
+  anuncio.addServiceUUID(UUID_SERVICO);
+  NimBLEAdvertisementData respostaScan;
+  respostaScan.setName(nome.c_str());
+
+  NimBLEAdvertising *anunciante = NimBLEDevice::getAdvertising();
+  anunciante->setAdvertisementData(anuncio);
+  anunciante->setScanResponseData(respostaScan);
+  anunciante->start();
+
+  Serial.print("Bluetooth anunciando como ");
+  Serial.println(nome);
 }
 
+// Manda "<letra><jogador>", por exemplo "G1", que e o que o jogo entende.
 void enviarLetra(char letra) {
   Serial.print("Botao ");
   Serial.print(letra);
-  if (!mqtt.connected()) {
-    Serial.println(" (sem MQTT, nao enviado)");
+  if (caracteristicaBotoes == nullptr || NimBLEDevice::getServer()->getConnectedCount() == 0) {
+    Serial.println(" (jogo nao conectado, nao enviado)");
     return;
   }
-  char mensagem[2] = {letra, '\0'};
-  mqtt.publish(MQTT_TOPIC, mensagem);
+  char mensagem[3] = {letra, JOGADOR[0], '\0'};
+  caracteristicaBotoes->setValue((const uint8_t *)mensagem, 2);
+  caracteristicaBotoes->notify();
   Serial.println(" enviado");
 }
 
@@ -278,17 +298,14 @@ void setup() {
   Serial.println(" iniciado.");
 
   configurarBotoes();
-  mqtt.setServer(MQTT_BROKER, PORTA_MQTT);
 
   if (conectarWiFi(10000UL)) {
     verificarAtualizacao();
-    conectarMQTT();
   }
+  desligarWiFi();
+  iniciarBluetooth();
 }
 
 void loop() {
-  unsigned long agora = millis();
-  manterConexoes(agora);
-  mqtt.loop();
-  lerBotoes(agora);
+  lerBotoes(millis());
 }

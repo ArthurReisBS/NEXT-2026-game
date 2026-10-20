@@ -9,7 +9,7 @@ set -euo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ENV_FILE="$DIR/.env"
 SAIDA="$DIR/ota_boot/secrets.h"
-CHAVES=(MANIFEST_URL MQTT_BROKER MQTT_TOPIC)
+CHAVES=(MANIFEST_URL JOGADOR)
 if [[ "${1:-}" == "--usb" ]]; then
   CHAVES+=(WIFI_SSID WIFI_PASSWORD)
 elif [[ -n "${1:-}" ]]; then
