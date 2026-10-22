@@ -37,8 +37,10 @@ const Color VERDE{63, 174, 73, 255};
 const Color VERDE_ESC{82, 150, 12, 255};
 const Color AMARELO{217, 177, 32, 255};
 const Color VERMELHO{233, 42, 46, 255};
+const Color BRANCO{250, 250, 250, 255};
 
-Color CorBotao(int i) { return i == 0 ? VERDE : i == 1 ? AMARELO : VERMELHO; }
+// Cor de cada botão do controle: verde, amarelo e Enter (branco).
+Color CorBotao(int i) { return i == 0 ? VERDE : i == 1 ? AMARELO : BRANCO; }
 Color CorCrit(Crit c) { return c == Crit::Ok ? VERDE : c == Crit::Alerta ? AMARELO : VERMELHO; }
 
 // ------------------------------------------------------------------ arquivos
@@ -325,6 +327,8 @@ void Legenda(Rectangle r, const char* a, const char* b, const char* c, float alf
     for (int i = 0; i < 3; ++i) {
         float cx = r.x + r.width * (2 * i + 1) / 6.0f;
         DrawCircle(static_cast<int>(cx), static_cast<int>(r.y + r.height - 62), 11, Fade(CorBotao(i), alfa));
+        // contorno para o botão branco não sumir no cartão claro
+        if (i == 2) DrawCircleLines(static_cast<int>(cx), static_cast<int>(r.y + r.height - 62), 11, Fade(CARTAO_BORDA, alfa));
         Texto(nomes[i], cx, r.y + r.height - 44, 22, Fade(NAVY, alfa));
     }
 }
@@ -332,8 +336,8 @@ void Legenda(Rectangle r, const char* a, const char* b, const char* c, float alf
 void Cartao(const Jogo& jogo, int j, Rectangle r) {
     const bool rev = jogo.fase() == Fase::Revelacao;
     const bool altura = jogo.modo() == Modo::Altura;
-    // Altura: só quem está na vez joga. Criticidade (corrida): os dois jogam ao mesmo tempo.
-    const bool vez = jogo.fase() == Fase::Jogando && (!altura || jogo.jogadorDaVez() == j);
+    // Nos dois modos os jogadores jogam ao mesmo tempo, cada um com o seu controle.
+    const bool vez = jogo.fase() == Fase::Jogando;
     const Resposta& rp = jogo.resposta(j);
     const bool mascarada = jogo.fase() == Fase::Jogando && rp.travada;
     const bool perdeu = rev && rp.perdeuVez;  // o outro jogador apertou primeiro
@@ -447,7 +451,7 @@ void TelaJogo(const Jogo& jogo, const Foto& foto) {
     } else if (jogo.modo() == Modo::Criticidade) {
         Texto("Quem apertar primeiro responde. O outro perde a vez!", W / 2.0f, 683, 28, NAVY);
     } else {
-        Texto(TextFormat("Vez do Jogador %d", jogo.jogadorDaVez() + 1), W / 2.0f, 683, 28, NAVY);
+        Texto("Quem confirmar primeiro encerra a rodada!", W / 2.0f, 683, 28, NAVY);
     }
 }
 
@@ -581,7 +585,12 @@ int main(int argc, char** argv) {
             case Fase::Vencedor: TelaVencedor(jogo, logo, temLogo); break;
         }
         DesenharConfete();
-        if (usarBle) Status(ble.conectado(), ble.conectado() ? "Bluetooth: conectado" : "Bluetooth: procurando... (teclado: 1,2,3 / 8,9,0)");
+        if (usarBle) {
+            const int n = ble.conectados();
+            Status(n > 0, n == 2   ? "Bluetooth: 2 controles"
+                          : n == 1 ? "Bluetooth: 1 controle, procurando o outro..."
+                                   : "Bluetooth: procurando... (teclado: 1,2,3 / 8,9,0)");
+        }
         else if (porta.aberta()) Status(true, "ESP32: " + nomePorta);
         else Status(false, "teclado: J1 1,2,3 | J2 8,9,0");
         rlPopMatrix();

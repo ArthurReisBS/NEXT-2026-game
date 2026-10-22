@@ -14,6 +14,7 @@ static int falhas = 0;
 static void apertarN(Jogo& j, Botao b, int n) { for (int i = 0; i < n; ++i) j.apertar(b); }
 
 // Cenário do PDF: foto real = 27 cm (Alerta). J1 digita 32 (Crítico), J2 digita 28 (Alerta).
+// Os dois montam o número ao mesmo tempo; o Enter do J2 encerra a rodada.
 static void testeAlturaComoNoPdf() {
     Jogo j;
     j.definirRodadas({{"x.jpg", 27}});
@@ -22,18 +23,15 @@ static void testeAlturaComoNoPdf() {
     CHECK(j.fase() == Fase::Jogando);
     CHECK(j.modo() == Modo::Altura);
 
-    apertarN(j, Botao::B1, 3);  // dezena 3
-    apertarN(j, Botao::B2, 2);  // unidade 2 -> 32
+    apertarN(j, Botao::B1, 3);  // J1: dezena 3
+    apertarN(j, Botao::B4, 2);  // J2: dezena 2
+    apertarN(j, Botao::B2, 2);  // J1: unidade 2 -> 32
+    apertarN(j, Botao::B5, 8);  // J2: unidade 8 -> 28
     CHECK(j.resposta(0).cm() == 32);
     CHECK(j.resposta(0).critExibida(Modo::Altura) == Crit::Critico);
-    j.apertar(Botao::B3);       // enter do jogador 1
-    CHECK(j.jogadorDaVez() == 1);
-
-    apertarN(j, Botao::B1, 2);
-    apertarN(j, Botao::B2, 8);  // 28
     CHECK(j.resposta(1).cm() == 28);
     CHECK(j.resposta(1).critExibida(Modo::Altura) == Crit::Alerta);
-    j.apertar(Botao::B3);
+    j.apertar(Botao::B6);       // Enter do J2
 
     CHECK(j.fase() == Fase::Revelacao);
     CHECK(j.placar(0) == 0 && j.placar(1) == 1);  // "0 - 1" como no PDF
@@ -95,17 +93,35 @@ static void testeCriticidadeSegundoJogadorPrimeiro() {
     CHECK(!j.resposta(0).perdeuVez && !j.resposta(1).perdeuVez);
 }
 
-// Os botões do jogador 2 também funcionam no início e no modo Altura (quem está na vez).
-static void testeBotoesDoJogador2NoInicioENaAltura() {
+// Na Altura cada controle só mexe no seu jogador: os botões do J2 não mudam o número do J1.
+static void testeAlturaCadaControleNoSeuJogador() {
     Jogo j;
     j.definirRodadas({{"x.jpg", 27}});
-    j.apertar(Botao::B4);  // verde do J2 inicia a Altura
+    j.apertar(Botao::B4);  // verde do J2 também inicia a Altura
     CHECK(j.modo() == Modo::Altura && j.fase() == Fase::Jogando);
-    j.apertar(Botao::B4);  // dezena
-    j.apertar(Botao::B5);  // unidade
-    CHECK(j.resposta(0).cm() == 11);
-    j.apertar(Botao::B6);  // confirmar
-    CHECK(j.jogadorDaVez() == 1);
+    j.apertar(Botao::B4);  // dezena do J2
+    j.apertar(Botao::B5);  // unidade do J2
+    CHECK(j.resposta(1).cm() == 11);
+    CHECK(j.resposta(0).cm() == 0);
+    j.apertar(Botao::B1);  // dezena do J1
+    CHECK(j.resposta(0).cm() == 10);
+    CHECK(j.resposta(1).cm() == 11);
+}
+
+// O primeiro Enter encerra a rodada, mesmo que o outro jogador não tenha confirmado.
+static void testeAlturaPrimeiroEnterEncerra() {
+    Jogo j;
+    j.definirRodadas({{"x.jpg", 27}, {"y.jpg", 5}});
+    j.apertar(Botao::B1);
+    apertarN(j, Botao::B1, 2);  // J1: 20
+    apertarN(j, Botao::B4, 3);  // J2: 30, ainda sem confirmar
+    j.apertar(Botao::B3);       // Enter do J1
+    CHECK(j.fase() == Fase::Revelacao);
+    CHECK(j.resposta(0).travada && !j.resposta(1).travada);
+    // vale o número que o J2 tinha montado: |30-27| = 3 < |20-27| = 7
+    CHECK(j.placar(0) == 0 && j.placar(1) == 1);
+    j.apertar(Botao::B6);       // Enter atrasado do J2 não muda nada
+    CHECK(j.fase() == Fase::Revelacao && j.placar(1) == 1);
 }
 
 static void testeEmpateEPontosDuplos() {
@@ -113,11 +129,11 @@ static void testeEmpateEPontosDuplos() {
     j.definirRodadas({{"x.jpg", 25}});
     j.apertar(Botao::B1);
     // Os dois digitam 24 -> empate na distância, os dois pontuam.
-    for (int jogador = 0; jogador < 2; ++jogador) {
-        apertarN(j, Botao::B1, 2);
-        apertarN(j, Botao::B2, 4);
-        j.apertar(Botao::B3);
-    }
+    apertarN(j, Botao::B1, 2);
+    apertarN(j, Botao::B2, 4);
+    apertarN(j, Botao::B4, 2);
+    apertarN(j, Botao::B5, 4);
+    j.apertar(Botao::B3);
     CHECK(j.placar(0) == 1 && j.placar(1) == 1);
     j.atualizar(1.5f);
     j.apertar(Botao::B1);
@@ -147,8 +163,7 @@ static void testeBotaoAntesDoTempoMinimoEIgnorado() {
     Jogo j;
     j.definirRodadas({{"x.jpg", 40}, {"y.jpg", 12}});
     j.apertar(Botao::B1);
-    j.apertar(Botao::B3);
-    j.apertar(Botao::B3);
+    j.apertar(Botao::B3);  // primeiro Enter já encerra
     CHECK(j.fase() == Fase::Revelacao);
     j.apertar(Botao::B1);  // cedo demais
     CHECK(j.fase() == Fase::Revelacao);
@@ -178,7 +193,8 @@ int main() {
     testeVoltaDoContador();
     testeCriticidadeCorrida();
     testeCriticidadeSegundoJogadorPrimeiro();
-    testeBotoesDoJogador2NoInicioENaAltura();
+    testeAlturaCadaControleNoSeuJogador();
+    testeAlturaPrimeiroEnterEncerra();
     testeEmpateEPontosDuplos();
     testePartidaCompletaEAvancoAutomatico();
     testeBotaoAntesDoTempoMinimoEIgnorado();

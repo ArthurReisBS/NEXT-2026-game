@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <deque>
 #include <mutex>
+#include <set>
 #include <thread>
 
 #include <winrt/Windows.Devices.Bluetooth.Advertisement.h>
@@ -21,19 +22,25 @@ using namespace Windows::Devices::Bluetooth::Advertisement;
 using namespace Windows::Devices::Bluetooth::GenericAttributeProfile;
 
 namespace {
-// Os mesmos UUIDs estão em ../ota_boot/ota_boot.ino
+// Os mesmos UUIDs estão em ../ota_boot_j1 e ../ota_boot_j2
 const guid UUID_SERVICO{0x6e400001, 0xb5a3, 0xf393, {0xe0, 0xa9, 0xe5, 0x0e, 0x24, 0xdc, 0xca, 0x9e}};
 const guid UUID_CARACTERISTICA{0x6e400003, 0xb5a3, 0xf393, {0xe0, 0xa9, 0xe5, 0x0e, 0x24, 0xdc, 0xca, 0x9e}};
+
+// Um controle (ESP32) por jogador: NEXT2026-J1 manda BTN1-3 e NEXT2026-J2 manda BTN4-6.
+constexpr int CONTROLES = 2;
 
 using namespace std::chrono_literals;
 }  // namespace
 
 struct ReceptorBLE::Impl {
-    std::thread thread;
+    // Uma thread por controle. Cada uma procura um ESP32 que a outra ainda não pegou.
+    std::thread threads[CONTROLES];
     std::atomic<bool> parar{false};
-    std::atomic<bool> conectado{false};
+    std::atomic<int> conectados{0};
     std::mutex trava;
     std::deque<std::string> fila;
+    std::mutex travaEnderecos;
+    std::set<uint64_t> emUso;  // endereços já com uma thread
 
     void empilhar(std::string texto) {
         while (!texto.empty() && (texto.back() == '\n' || texto.back() == '\r' || texto.back() == ' '))
@@ -48,28 +55,43 @@ struct ReceptorBLE::Impl {
         while (!parar && std::chrono::steady_clock::now() < fim) std::this_thread::sleep_for(50ms);
     }
 
-    // Escuta anúncios do nosso serviço por até 'limite'. Devolve o endereço do ESP32 ou 0.
-    BluetoothAddressType tipoEndereco = BluetoothAddressType::Public;
-
-    uint64_t procurar(std::chrono::milliseconds limite) {
+    // Escuta anúncios do nosso serviço por até 'limite'. Devolve o endereço de um ESP32 que
+    // nenhuma outra thread pegou (já reservado para esta) ou 0.
+    uint64_t procurar(std::chrono::milliseconds limite, BluetoothAddressType& tipoEndereco) {
         BluetoothLEAdvertisementWatcher watcher;
         watcher.ScanningMode(BluetoothLEScanningMode::Active);
         watcher.AdvertisementFilter().Advertisement().ServiceUuids().Append(UUID_SERVICO);
 
         std::atomic<uint64_t> achado{0};
-        watcher.Received([&](auto&&, BluetoothLEAdvertisementReceivedEventArgs const& a) {
+        std::mutex travaAchado;
+        bool encerrado = false;
+        auto token = watcher.Received([&](auto&&, BluetoothLEAdvertisementReceivedEventArgs const& a) {
+            std::lock_guard<std::mutex> g(travaAchado);
+            if (encerrado || achado != 0) return;
+            uint64_t endereco = a.BluetoothAddress();
+            std::lock_guard<std::mutex> ge(travaEnderecos);
+            if (!emUso.insert(endereco).second) return;  // é o controle da outra thread
             tipoEndereco = a.BluetoothAddressType();
-            achado = a.BluetoothAddress();
+            achado = endereco;
         });
         watcher.Start();
         auto fim = std::chrono::steady_clock::now() + limite;
         while (!parar && achado == 0 && std::chrono::steady_clock::now() < fim) std::this_thread::sleep_for(50ms);
         watcher.Stop();
+        watcher.Received(token);
+        // Espera um Received que ainda esteja rodando e impede que um atrasado reserve outra placa.
+        std::lock_guard<std::mutex> g(travaAchado);
+        encerrado = true;
         return achado;
     }
 
+    void liberar(uint64_t endereco) {
+        std::lock_guard<std::mutex> g(travaEnderecos);
+        emUso.erase(endereco);
+    }
+
     // Conecta e fica até a conexão cair. Devolve quando é para procurar de novo.
-    void sessao(uint64_t endereco) {
+    void sessao(uint64_t endereco, BluetoothAddressType tipoEndereco) {
         auto dispositivo = BluetoothLEDevice::FromBluetoothAddressAsync(endereco, tipoEndereco).get();
         if (!dispositivo) return;
 
@@ -123,10 +145,10 @@ struct ReceptorBLE::Impl {
                                GattClientCharacteristicConfigurationDescriptorValue::Notify)
                            .get();
         if (escrita == GattCommunicationStatus::Success) {
-            conectado = true;
-            std::printf("Bluetooth: ESP32 conectado.\n"); std::fflush(stdout);
+            ++conectados;
+            std::printf("Bluetooth: ESP32 conectado (%d de %d).\n", conectados.load(), CONTROLES); std::fflush(stdout);
             while (!caiu && !parar) std::this_thread::sleep_for(100ms);
-            conectado = false;
+            --conectados;
             std::printf("Bluetooth: ESP32 desconectado.\n"); std::fflush(stdout);
         }
 
@@ -140,15 +162,17 @@ struct ReceptorBLE::Impl {
     void executar() {
         init_apartment(apartment_type::multi_threaded);
         while (!parar) {
+            uint64_t endereco = 0;
             try {
-                uint64_t endereco = procurar(3000ms);
-                if (endereco != 0) sessao(endereco);
+                BluetoothAddressType tipoEndereco = BluetoothAddressType::Public;
+                endereco = procurar(3000ms, tipoEndereco);
+                if (endereco != 0) sessao(endereco, tipoEndereco);
             } catch (hresult_error const& e) {
                 // adaptador desligado, aparelho sumiu no meio da conexão...
-                conectado = false;
                 std::printf("Bluetooth: erro 0x%08x, tentando de novo.\n", static_cast<unsigned>(e.code()));
                 std::fflush(stdout);
             }
+            if (endereco != 0) liberar(endereco);
             dormir(1000ms);
         }
         uninit_apartment();
@@ -159,13 +183,15 @@ ReceptorBLE::ReceptorBLE() : impl_(new Impl) {}
 ReceptorBLE::~ReceptorBLE() { parar(); }
 bool ReceptorBLE::suportado() { return true; }
 void ReceptorBLE::iniciar() {
-    if (!impl_->thread.joinable()) impl_->thread = std::thread([this] { impl_->executar(); });
+    for (auto& t : impl_->threads)
+        if (!t.joinable()) t = std::thread([this] { impl_->executar(); });
 }
 void ReceptorBLE::parar() {
     impl_->parar = true;
-    if (impl_->thread.joinable()) impl_->thread.join();
+    for (auto& t : impl_->threads)
+        if (t.joinable()) t.join();
 }
-bool ReceptorBLE::conectado() const { return impl_->conectado; }
+int ReceptorBLE::conectados() const { return impl_->conectados; }
 bool ReceptorBLE::lerLinha(std::string& linha) {
     std::lock_guard<std::mutex> g(impl_->trava);
     if (impl_->fila.empty()) return false;
@@ -182,6 +208,6 @@ ReceptorBLE::~ReceptorBLE() = default;
 bool ReceptorBLE::suportado() { return false; }
 void ReceptorBLE::iniciar() {}
 void ReceptorBLE::parar() {}
-bool ReceptorBLE::conectado() const { return false; }
+int ReceptorBLE::conectados() const { return 0; }
 bool ReceptorBLE::lerLinha(std::string&) { return false; }
 #endif

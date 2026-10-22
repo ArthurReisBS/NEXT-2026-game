@@ -23,14 +23,13 @@ constexpr float TEMPO_AUTO_VENCEDOR = 20.0f;  // s até voltar ao início
 // ---------------------------------------------------------------- tipos
 enum class Modo { Altura, Criticidade };
 enum class Crit { Ok, Alerta, Critico };
-// Botões 1-3 (verde, amarelo, vermelho) são do jogador 1; 4-6 (mesmas cores) são do jogador 2.
-// No modo Altura os dois conjuntos fazem o mesmo (quem está na vez usa o que preferir);
-// na Criticidade cada conjunto responde por um jogador (corrida: o primeiro clique vale).
+// Botões 1-3 (verde, amarelo, Enter) são do jogador 1; 4-6 (mesmas cores) são do jogador 2.
+// Nos dois modos cada conjunto só mexe no seu jogador, e os dois jogam ao mesmo tempo.
 enum class Botao { B1 = 1, B2 = 2, B3 = 3, B4 = 4, B5 = 5, B6 = 6 };
 enum class Fase { Inicio, Jogando, Revelacao, Vencedor };
 
 inline int jogadorDoBotao(Botao b) { return static_cast<int>(b) <= 3 ? 0 : 1; }
-// Qual das 3 cores é: 1 = verde, 2 = amarelo, 3 = vermelho
+// Qual dos 3 botões é: 1 = verde, 2 = amarelo, 3 = Enter
 inline int corDoBotao(Botao b) { return (static_cast<int>(b) - 1) % 3 + 1; }
 
 inline Crit classificar(int cm) {
@@ -93,7 +92,6 @@ public:
     // ---- leitura para a interface
     Fase fase() const { return fase_; }
     Modo modo() const { return modo_; }
-    int jogadorDaVez() const { return vez_; }  // 0 ou 1
     int rodadaAtual() const { return indice_; }
     int totalRodadas() const { return static_cast<int>(rodadas_.size()); }
     const Rodada& rodada() const { return rodadas_.at(static_cast<size_t>(indice_)); }
@@ -114,7 +112,7 @@ private:
     std::vector<Rodada> pool_, rodadas_;
     Fase fase_ = Fase::Inicio;
     Modo modo_ = Modo::Altura;
-    int indice_ = 0, vez_ = 0, eventoRev_ = 0;
+    int indice_ = 0, eventoRev_ = 0;
     Resposta resp_[2];
     int placar_[2] = {0, 0};
     bool ganhou_[2] = {false, false};
@@ -139,33 +137,30 @@ private:
         resp_[0] = Resposta{};
         resp_[1] = Resposta{};
         ganhou_[0] = ganhou_[1] = false;
-        vez_ = 0;
     }
 
     void jogar(Botao b) {
         const int cor = corDoBotao(b);
+        const int j = jogadorDoBotao(b);
+        Resposta& r = resp_[j];
         if (modo_ == Modo::Altura) {
-            Resposta& r = resp_[vez_];
+            // Cada um monta o seu número ao mesmo tempo. O primeiro Enter, de qualquer jogador,
+            // encerra a rodada: o outro fica com o número que tinha montado até ali.
             if (cor == 1) r.dezena = (r.dezena + 1) % 10;
             else if (cor == 2) r.unidade = (r.unidade + 1) % 10;
-            else travar();
+            else {
+                r.travada = true;
+                avaliar();
+            }
         } else {
             // Criticidade é uma corrida: o primeiro clique de qualquer jogador é a resposta final
             // dele e o outro perde a vez nesta rodada.
-            const int j = jogadorDoBotao(b);
-            Resposta& r = resp_[j];
             r.crit = cor == 1 ? Crit::Ok : cor == 2 ? Crit::Alerta : Crit::Critico;
             r.respondeuCrit = true;
             r.travada = true;
             resp_[1 - j].perdeuVez = true;
             avaliar();
         }
-    }
-
-    void travar() {
-        resp_[vez_].travada = true;
-        if (vez_ == 0) { vez_ = 1; return; }
-        avaliar();
     }
 
     void avaliar() {
