@@ -14,7 +14,7 @@ static int falhas = 0;
 static void apertarN(Jogo& j, Botao b, int n) { for (int i = 0; i < n; ++i) j.apertar(b); }
 
 // Cenário do PDF: foto real = 27 cm (Alerta). J1 digita 32 (Crítico), J2 digita 28 (Alerta).
-// Os dois montam o número ao mesmo tempo; o Enter do J2 encerra a rodada.
+// Os dois montam o número ao mesmo tempo; a rodada só termina quando os dois dão Enter.
 static void testeAlturaComoNoPdf() {
     Jogo j;
     j.definirRodadas({{"x.jpg", 27}});
@@ -31,7 +31,9 @@ static void testeAlturaComoNoPdf() {
     CHECK(j.resposta(0).critExibida(Modo::Altura) == Crit::Critico);
     CHECK(j.resposta(1).cm() == 28);
     CHECK(j.resposta(1).critExibida(Modo::Altura) == Crit::Alerta);
-    j.apertar(Botao::B6);       // Enter do J2
+    j.apertar(Botao::B6);       // Enter do J2: o J1 ainda não confirmou
+    CHECK(j.fase() == Fase::Jogando);
+    j.apertar(Botao::B3);       // Enter do J1: agora os dois responderam
 
     CHECK(j.fase() == Fase::Revelacao);
     CHECK(j.placar(0) == 0 && j.placar(1) == 1);  // "0 - 1" como no PDF
@@ -108,37 +110,64 @@ static void testeAlturaCadaControleNoSeuJogador() {
     CHECK(j.resposta(1).cm() == 11);
 }
 
-// O primeiro Enter encerra a rodada, mesmo que o outro jogador não tenha confirmado.
-static void testeAlturaPrimeiroEnterEncerra() {
+// Altura: os dois respondem. Quem confirma fica travado e a rodada espera o outro.
+static void testeAlturaEsperaOsDois() {
     Jogo j;
-    j.definirRodadas({{"x.jpg", 27}, {"y.jpg", 5}});
+    j.definirRodadas({{"x.jpg", 27}});
     j.apertar(Botao::B1);
     apertarN(j, Botao::B1, 2);  // J1: 20
-    apertarN(j, Botao::B4, 3);  // J2: 30, ainda sem confirmar
-    j.apertar(Botao::B3);       // Enter do J1
-    CHECK(j.fase() == Fase::Revelacao);
+    j.apertar(Botao::B3);       // J1 confirma
+    CHECK(j.fase() == Fase::Jogando);
     CHECK(j.resposta(0).travada && !j.resposta(1).travada);
-    // vale o número que o J2 tinha montado: |30-27| = 3 < |20-27| = 7
+    // J1 travado: apertar mais não muda o número dele
+    apertarN(j, Botao::B2, 5);
+    CHECK(j.resposta(0).cm() == 20);
+    // o J2 ainda pode responder
+    apertarN(j, Botao::B4, 3);  // J2: 30
+    j.apertar(Botao::B6);
+    CHECK(j.fase() == Fase::Revelacao);
+    // |30-27| = 3 < |20-27| = 7: só o J2 pontua
     CHECK(j.placar(0) == 0 && j.placar(1) == 1);
-    j.apertar(Botao::B6);       // Enter atrasado do J2 não muda nada
-    CHECK(j.fase() == Fase::Revelacao && j.placar(1) == 1);
+    CHECK(!j.ganhouRodada(0) && j.ganhouRodada(1));
 }
 
-static void testeEmpateEPontosDuplos() {
+// Empate na distância: ninguém pontua (os pontos não vão para os dois ao mesmo tempo).
+static void testeEmpateNaAlturaNaoPontuaNinguem() {
     Jogo j;
     j.definirRodadas({{"x.jpg", 25}});
     j.apertar(Botao::B1);
-    // Os dois digitam 24 -> empate na distância, os dois pontuam.
+    // J1 digita 24 e J2 digita 26: os dois a 1 cm.
     apertarN(j, Botao::B1, 2);
     apertarN(j, Botao::B2, 4);
     apertarN(j, Botao::B4, 2);
-    apertarN(j, Botao::B5, 4);
+    apertarN(j, Botao::B5, 6);
     j.apertar(Botao::B3);
-    CHECK(j.placar(0) == 1 && j.placar(1) == 1);
+    j.apertar(Botao::B6);
+    CHECK(j.fase() == Fase::Revelacao);
+    CHECK(j.empatouRodada());
+    CHECK(j.placar(0) == 0 && j.placar(1) == 0);
+    CHECK(!j.ganhouRodada(0) && !j.ganhouRodada(1));
     j.atualizar(1.5f);
     j.apertar(Botao::B1);
     CHECK(j.fase() == Fase::Vencedor);
     CHECK(j.vencedor() == -1);
+}
+
+// Em cada rodada pontua no máximo um jogador, nos dois modos.
+static void testeNuncaPontuaOsDoisAoMesmoTempo() {
+    Jogo j;
+    j.definirRodadas({{"a.jpg", 10}, {"b.jpg", 22}, {"c.jpg", 35}, {"d.jpg", 5}, {"e.jpg", 41}});
+    j.apertar(Botao::B1);
+    for (int r = 0; r < RODADAS_POR_PARTIDA; ++r) {
+        apertarN(j, Botao::B2, 3 + r);  // J1 chuta 3+r
+        apertarN(j, Botao::B5, 7);      // J2 chuta 7
+        j.apertar(Botao::B3);
+        j.apertar(Botao::B6);
+        CHECK(j.fase() == Fase::Revelacao);
+        CHECK(!(j.ganhouRodada(0) && j.ganhouRodada(1)));
+        j.atualizar(TEMPO_AUTO_REVELACAO + 0.1f);
+    }
+    CHECK(j.placar(0) + j.placar(1) <= RODADAS_POR_PARTIDA);
 }
 
 static void testePartidaCompletaEAvancoAutomatico() {
@@ -163,7 +192,8 @@ static void testeBotaoAntesDoTempoMinimoEIgnorado() {
     Jogo j;
     j.definirRodadas({{"x.jpg", 40}, {"y.jpg", 12}});
     j.apertar(Botao::B1);
-    j.apertar(Botao::B3);  // primeiro Enter já encerra
+    j.apertar(Botao::B3);  // Enter do J1
+    j.apertar(Botao::B6);  // Enter do J2: agora encerra
     CHECK(j.fase() == Fase::Revelacao);
     j.apertar(Botao::B1);  // cedo demais
     CHECK(j.fase() == Fase::Revelacao);
@@ -171,6 +201,41 @@ static void testeBotaoAntesDoTempoMinimoEIgnorado() {
     j.apertar(Botao::B1);
     CHECK(j.fase() == Fase::Jogando);
     CHECK(j.rodadaAtual() == 1);
+}
+
+// Cada desafio sorteia só as fotos marcadas para ele (fotos sem marca valem para os dois).
+static void testeFotosPorDesafio() {
+    std::vector<Rodada> r = {
+        {"a.jpg", 5, PARA_ALTURA},       {"b.jpg", 9, PARA_ALTURA},
+        {"c.jpg", 25, PARA_CRITICIDADE}, {"d.jpg", 32, PARA_CRITICIDADE},
+        {"e.jpg", 12},  // sem marca: vale para os dois
+    };
+    for (int vez = 0; vez < 20; ++vez) {
+        Jogo alt;
+        alt.definirRodadas(r);
+        alt.apertar(Botao::B1);  // Altura
+        CHECK(alt.totalRodadas() == 3);
+        for (int i = 0; i < alt.totalRodadas(); ++i) {
+            CHECK(alt.rodada().desafios & PARA_ALTURA);
+            alt.apertar(Botao::B3);
+            alt.apertar(Botao::B6);
+            alt.atualizar(TEMPO_AUTO_REVELACAO + 0.1f);
+        }
+        Jogo cri;
+        cri.definirRodadas(r);
+        cri.apertar(Botao::B2);  // Criticidade
+        CHECK(cri.totalRodadas() == 3);
+        for (int i = 0; i < cri.totalRodadas(); ++i) {
+            CHECK(cri.rodada().desafios & PARA_CRITICIDADE);
+            cri.apertar(Botao::B1);
+            cri.atualizar(TEMPO_AUTO_REVELACAO + 0.1f);
+        }
+    }
+    // se nenhuma foto é marcada para o desafio, usa todas
+    Jogo so;
+    so.definirRodadas({{"a.jpg", 5, PARA_ALTURA}});
+    so.apertar(Botao::B2);
+    CHECK(so.fase() == Fase::Jogando && so.totalRodadas() == 1);
 }
 
 static void testeSemRodadasNaoInicia() {
@@ -194,10 +259,12 @@ int main() {
     testeCriticidadeCorrida();
     testeCriticidadeSegundoJogadorPrimeiro();
     testeAlturaCadaControleNoSeuJogador();
-    testeAlturaPrimeiroEnterEncerra();
-    testeEmpateEPontosDuplos();
+    testeAlturaEsperaOsDois();
+    testeEmpateNaAlturaNaoPontuaNinguem();
+    testeNuncaPontuaOsDoisAoMesmoTempo();
     testePartidaCompletaEAvancoAutomatico();
     testeBotaoAntesDoTempoMinimoEIgnorado();
+    testeFotosPorDesafio();
     testeSemRodadasNaoInicia();
     testeFaixas();
     if (falhas == 0) std::printf("OK: todos os testes passaram\n");

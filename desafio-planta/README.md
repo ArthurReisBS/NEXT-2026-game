@@ -13,7 +13,7 @@ O ESP32 não tem tela, então a interface roda no computador e o ESP32 só avisa
 
 Cada jogador tem 3 botões (jogador 1 = BTN1-3, jogador 2 = BTN4-6; no teclado, 1 2 3 e 8 9 0). São 5 rodadas por partida.
 
-- **Altura**: os jogadores se revezam (o Jogador 1 responde, depois o Jogador 2). As respostas ficam escondidas ("Pronto!") até os dois responderem; aí a foto revela a altura real. Qualquer um dos dois conjuntos de botões serve para quem está na vez.
+- **Altura**: os **dois jogam ao mesmo tempo**, cada um com o seu conjunto de botões: monta o número (dezena e unidade) e confirma com o vermelho. Quem confirma fica travado ("Pronto!") e a rodada só termina quando os **dois** confirmaram; aí a foto revela a altura real.
 - **Criticidade (corrida)**: os dois jogam ao mesmo tempo. **Quem apertar primeiro responde e o outro perde a vez** naquela rodada (o cartão dele fica cinza com "perdeu a vez"). Acertou a faixa = 1 ponto; errou = ninguém pontua.
 
 Na tela inicial, o botão **verde** inicia o minigame de altura e o **amarelo** inicia o de criticidade.
@@ -26,7 +26,7 @@ Na tela inicial, o botão **verde** inicia o minigame de altura e o **amarelo** 
 
 Na criticidade o botão apertado já é a resposta final, porque não sobra botão para "confirmar".
 
-Pontuação: na altura, ganha o ponto quem chutou mais perto (empate, os dois pontuam). Na criticidade, ganha o ponto quem apertou primeiro e acertou a faixa. Depois da revelação, qualquer botão avança (ou avança sozinho em 7 s).
+Pontuação: em cada rodada pontua no máximo um jogador. Na altura, ganha o ponto quem chutou mais perto (empate de distância: ninguém pontua). Na criticidade, ganha o ponto quem apertou primeiro e acertou a faixa. Depois da revelação, qualquer botão avança (ou avança sozinho em 7 s).
 
 Faixas de criticidade (em `src/game.hpp`, **ajuste para as faixas reais do EcoTrack**):
 OK abaixo de 20 cm, Alerta de 20 a 29 cm, Crítico a partir de 30 cm.
@@ -62,13 +62,22 @@ build\Release\desafio_planta.exe COM5        (Windows; veja a porta no Gerenciad
 - Sem ESP32: use o **teclado** (jogador 1 = teclas 1, 2 e 3; jogador 2 = teclas 8, 9 e 0). O teclado funciona sempre, mesmo com o ESP32 ligado.
 - F11 alterna tela cheia; ESC sai.
 
-## Colocando as fotos reais
+## Fotos
 
-1. Copie as fotos para `assets/imagens/`.
-2. Liste em `assets/rodadas.csv`, uma por linha: `grama01.jpg;27` (nome do arquivo; altura real em cm).
-3. Se tiver mais de 5 fotos, cada partida sorteia 5.
+As 10 fotos reais já estão em `assets/imagens/` (o nome do arquivo é a altura da grama em cm) e listadas em `assets/rodadas.csv`, 5 para cada desafio:
 
-Enquanto o CSV estiver vazio, o jogo usa a foto de exemplo do PDF e desenhos de teste.
+| Desafio | Fotos |
+|---|---|
+| Altura em cm | 5, 9, 12, 13 e 30 cm |
+| Criticidade | 6 e 15 cm (OK), 25 cm (Alerta), 32 e 35 cm (Crítico) |
+
+Para trocar ou acrescentar fotos:
+
+1. Copie as fotos para `assets/imagens/` (de preferência em pé, tipo celular).
+2. Liste em `assets/rodadas.csv`, uma por linha: `grama01.jpg;27;altura` (arquivo; altura real em cm; desafio).
+3. O desafio pode ser `altura`, `criticidade` ou `ambos` (sem a 3ª coluna a foto vale para os dois). Cada partida sorteia até 5 fotos do desafio escolhido.
+
+Se o CSV não tiver nenhuma linha válida, o jogo usa a foto de exemplo do PDF e desenhos de teste.
 
 ## Estrutura
 
