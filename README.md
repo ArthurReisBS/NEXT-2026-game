@@ -22,7 +22,7 @@
 | 2 | amarelo | GPIO33 | `BTN5` |
 | 2 | vermelho | GPIO23 | `BTN6` |
 
-No minigame de Altura os dois conjuntos fazem o mesmo (usa-se o da vez), então ele roda mesmo só com os 3 botões do jogador 1.
+No minigame de Altura cada jogador usa o seu conjunto e os dois precisam confirmar; na Criticidade vale o primeiro clique.
 
 Cada botão vai entre o pino e o **GND** (sem resistor, o pull-up é interno).
 

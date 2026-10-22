@@ -518,9 +518,10 @@ void Cartao(const Jogo& jogo, int j, Rectangle r) {
     const Resposta& rp = jogo.resposta(j);
     const bool mascarada = jogo.fase() == Fase::Jogando && rp.travada;
     const bool perdeu = rev && rp.perdeuVez;  // o outro jogador apertou primeiro
+    const bool empate = rev && jogo.empatouRodada();  // Altura: mesma distância, ninguém pontua
 
     Color fill = CARTAO, borda = CARTAO_BORDA, cab = j == 0 ? ROXO : TEAL;
-    if (perdeu) { fill = Color{226, 230, 238, 255}; borda = Color{150, 160, 175, 255}; cab = Color{118, 126, 142, 255}; }
+    if (perdeu || empate) { fill = Color{226, 230, 238, 255}; borda = Color{150, 160, 175, 255}; cab = Color{118, 126, 142, 255}; }
     else if (rev) {
         if (jogo.ganhouRodada(j)) { fill = Color{222, 248, 214, 255}; borda = VERDE_ESC; cab = VERDE_ESC; }
         else { fill = Color{253, 224, 220, 255}; borda = VERMELHO; cab = Color{192, 40, 44, 255}; }
@@ -567,6 +568,8 @@ void Cartao(const Jogo& jogo, int j, Rectangle r) {
     else if (vez) Legenda(r, "OK", "Alerta", "Crítico", 1.0f);
     else if (perdeu) {
         // sem ícone: o jogador não respondeu
+    } else if (empate) {
+        Texto("empate: sem ponto", cx, r.y + r.height - 56, 28, Color{90, 100, 120, 255});
     } else if (rev) {
         if (jogo.ganhouRodada(j)) Visto(cx, r.y + r.height - 52, 56, VERDE_ESC);
         else Xis(cx, r.y + r.height - 52, 56, Color{170, 20, 25, 255});
@@ -575,7 +578,7 @@ void Cartao(const Jogo& jogo, int j, Rectangle r) {
     // carinhas da revelação
     if (rev) {
         float fx = j == 0 ? r.x + 8 : r.x + r.width - 8;
-        Rosto(fx, r.y + 10, 42, perdeu ? 0 : jogo.ganhouRodada(j) ? 1 : -1);
+        Rosto(fx, r.y + 10, 42, perdeu || empate ? 0 : jogo.ganhouRodada(j) ? 1 : -1);
     }
 }
 
@@ -639,7 +642,7 @@ void TelaJogo(const Jogo& jogo, const Foto& foto) {
     } else if (jogo.modo() == Modo::Criticidade) {
         Faixa("Quem apertar primeiro responde. O outro perde a vez!", W / 2.0f, 694, 24);
     } else {
-        Faixa("Quem confirmar primeiro encerra a rodada!", W / 2.0f, 694, 24);
+        Faixa("Montem o número e confirmem: os dois respondem!", W / 2.0f, 694, 24);
     }
 }
 

@@ -98,6 +98,7 @@ public:
     const Resposta& resposta(int j) const { return resp_[j]; }
     int placar(int j) const { return placar_[j]; }
     bool ganhouRodada(int j) const { return ganhou_[j]; }
+    bool empatouRodada() const { return empate_; }  // Altura: os dois erraram pela mesma distância
     float tempoFase() const { return tempoFase_; }
     // -1 = empate, 0 ou 1 = jogador vencedor (valem na fase Vencedor)
     int vencedor() const {
@@ -116,6 +117,7 @@ private:
     Resposta resp_[2];
     int placar_[2] = {0, 0};
     bool ganhou_[2] = {false, false};
+    bool empate_ = false;
     float tempoFase_ = 0.0f;
 
     void mudarFase(Fase f) { fase_ = f; tempoFase_ = 0.0f; }
@@ -137,6 +139,7 @@ private:
         resp_[0] = Resposta{};
         resp_[1] = Resposta{};
         ganhou_[0] = ganhou_[1] = false;
+        empate_ = false;
     }
 
     void jogar(Botao b) {
@@ -144,13 +147,14 @@ private:
         const int j = jogadorDoBotao(b);
         Resposta& r = resp_[j];
         if (modo_ == Modo::Altura) {
-            // Cada um monta o seu número ao mesmo tempo. O primeiro Enter, de qualquer jogador,
-            // encerra a rodada: o outro fica com o número que tinha montado até ali.
+            // Cada um monta o seu número ao mesmo tempo e confirma com o Enter. Quem confirma fica
+            // travado; a rodada só termina quando os dois confirmaram.
+            if (r.travada) return;
             if (cor == 1) r.dezena = (r.dezena + 1) % 10;
             else if (cor == 2) r.unidade = (r.unidade + 1) % 10;
             else {
                 r.travada = true;
-                avaliar();
+                if (resp_[0].travada && resp_[1].travada) avaliar();
             }
         } else {
             // Criticidade é uma corrida: o primeiro clique de qualquer jogador é a resposta final
@@ -168,8 +172,9 @@ private:
         if (modo_ == Modo::Altura) {
             int d0 = std::abs(resp_[0].cm() - r.alturaCm);
             int d1 = std::abs(resp_[1].cm() - r.alturaCm);
-            ganhou_[0] = d0 <= d1;  // empate: os dois pontuam
-            ganhou_[1] = d1 <= d0;
+            ganhou_[0] = d0 < d1;  // só o mais perto pontua; empate: ninguém
+            ganhou_[1] = d1 < d0;
+            empate_ = d0 == d1;
         } else {
             // só pontua quem respondeu (o outro perdeu a vez); errou = ninguém pontua
             for (int j = 0; j < 2; ++j) ganhou_[j] = resp_[j].respondeuCrit && resp_[j].crit == r.crit();
