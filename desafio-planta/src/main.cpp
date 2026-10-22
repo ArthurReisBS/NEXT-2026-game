@@ -23,20 +23,28 @@ namespace {
 constexpr int W = 1280;  // resolução lógica; o conteúdo escala para caber em qualquer tamanho de janela
 constexpr int H = 720;
 
-// Paleta tirada do PDF.
-const Color FUNDO{234, 245, 253, 255};
-const Color FUNDO_ONDA{220, 236, 252, 255};
-const Color FUNDO_ONDA2{205, 226, 250, 255};
-const Color NAVY{10, 38, 92, 255};
-const Color AZUL{28, 93, 196, 255};
-const Color AZUL_TXT{50, 108, 190, 255};
-const Color CARTAO{204, 227, 251, 255};
-const Color CARTAO_BORDA{111, 163, 221, 255};
-const Color BOTAO_INICIAR{2, 24, 88, 255};
+// Paleta: clima de rodovia em dia de sol (céu, morros verdes, asfalto) com acento roxo.
+const Color CEU_TOPO{120, 184, 234, 255};
+const Color CEU_BAIXO{216, 238, 250, 255};
+const Color MORRO_LONGE{92, 152, 112, 255};
+const Color MORRO_PERTO{58, 140, 74, 255};
+const Color GRAMA_TOPO{116, 192, 86, 255};
+const Color GRAMA_BAIXO{56, 144, 60, 255};
+const Color ASFALTO{76, 82, 92, 255};
+const Color ASFALTO_ESC{40, 45, 54, 255};
+const Color FAIXA{244, 244, 240, 255};
+const Color ROXO{104, 52, 238, 255};
+const Color ROXO_ESC{66, 28, 176, 255};
+const Color TEAL{0, 140, 168, 255};
+const Color LED{255, 198, 58, 255};
+const Color NAVY{20, 30, 58, 255};
+const Color CARTAO{255, 255, 255, 255};
+const Color CARTAO_BORDA{190, 200, 218, 255};
+const Color BOTAO_INICIAR{30, 36, 54, 255};
 const Color VERDE{63, 174, 73, 255};
-const Color VERDE_ESC{82, 150, 12, 255};
-const Color AMARELO{217, 177, 32, 255};
-const Color VERMELHO{233, 42, 46, 255};
+const Color VERDE_ESC{36, 128, 52, 255};
+const Color AMARELO{236, 186, 24, 255};
+const Color VERMELHO{228, 44, 48, 255};
 const Color BRANCO{250, 250, 250, 255};
 
 // Cor de cada botão do controle: verde, amarelo e Enter (branco).
@@ -143,37 +151,172 @@ void Tri(Vector2 a, Vector2 b, Vector2 c, Color col) {
     else DrawTriangle(a, b, c, col);
 }
 
-void Folha(float x, float y, float rh, float rv, Color c) {
-    DrawEllipse(static_cast<int>(x), static_cast<int>(y), rh, rv, c);
+// ------------------------------------------------------------------ cenário de rodovia
+// Uma câmera de rodovia em dia de sol: céu, morros verdes, viaduto, pista em perspectiva com carros
+// e caminhões indo embora. Tudo desenhado por código em coordenadas lógicas (1280x720).
+struct Cena {
+    float ox, oy, k;
+    Vector2 p(float x, float y) const { return {ox + x * k, oy + y * k}; }
+};
+
+void Quad(Vector2 a, Vector2 b, Vector2 c, Vector2 d, Color col) {
+    Tri(a, b, c, col);
+    Tri(a, c, d, col);
 }
 
-// Fundo no tamanho da janela: as manchas e plantinhas ficam coladas nos cantos de verdade,
-// mesmo quando a janela não é 16:9. (sw, sh = janela; k = escala do conteúdo)
-void Plantas() {
-    Folha(46, 690, 20, 52, AZUL);
-    Folha(100, 706, 20, 40, AZUL_TXT);
+// Pista em perspectiva: f = 0 no horizonte, f = 1 perto da base da tela.
+constexpr float HORIZONTE = 200.0f;
+constexpr float FUGA_X = 900.0f;
+constexpr float BASE_Y = 940.0f;
+constexpr float BASE_X = 520.0f;
+constexpr float BASE_MEIA = 380.0f;  // meia largura da pista em f = 1
+
+struct PontoPista { float x, y, meia; };
+
+PontoPista NaPista(float f) {
+    return {FUGA_X + (BASE_X - FUGA_X) * f, HORIZONTE + (BASE_Y - HORIZONTE) * f, 4.0f + (BASE_MEIA - 4.0f) * f};
 }
 
+// Faixa ao longo da pista entre f0 e f1, centrada em 'lado' (-1 a 1 = borda a borda) e com 'larg'
+// de meia largura (ambos como fração da meia largura da pista).
+void FaixaDaPista(const Cena& c, float f0, float f1, float lado, float larg, Color col) {
+    PontoPista a = NaPista(f0), b = NaPista(f1);
+    Quad(c.p(a.x + (lado - larg) * a.meia, a.y), c.p(a.x + (lado + larg) * a.meia, a.y),
+         c.p(b.x + (lado + larg) * b.meia, b.y), c.p(b.x + (lado - larg) * b.meia, b.y), col);
+}
+
+struct Veiculo {
+    float lane;  // -0.667, 0 ou 0.667: centro de cada uma das 3 faixas
+    float vel;   // voltas da pista por segundo
+    float fase;
+    int tipo;    // 0 = carro, 1 = caminhão baú
+    Color cor;
+};
+
+const Veiculo VEICULOS[] = {
+    {-0.667f, 0.040f, 0.00f, 0, {244, 244, 246, 255}},  // carro branco
+    {0.000f, 0.028f, 0.30f, 1, {238, 238, 242, 255}},   // caminhão branco
+    {0.667f, 0.055f, 0.62f, 0, {52, 64, 96, 255}},      // carro escuro
+    {-0.667f, 0.032f, 0.78f, 1, {232, 236, 240, 255}},  // outro caminhão
+    {0.000f, 0.048f, 0.90f, 0, {196, 52, 56, 255}},     // carro vermelho
+};
+
+// Veículo visto de trás, indo para o horizonte; encolhe e some no fundo.
+void DesenharVeiculo(const Cena& c, const Veiculo& v, float t) {
+    const float s = 1.0f - std::fmod(t * v.vel + v.fase, 1.0f);
+    const float f = s * s;
+    if (f < 0.03f) return;
+    const float a = std::min(1.0f, (1.0f - s) * 14.0f) * std::min(1.0f, f * 10.0f);
+    const PontoPista pp = NaPista(f);
+    const float larguraFaixa = pp.meia * 0.667f;
+    const float w = larguraFaixa * (v.tipo == 1 ? 0.56f : 0.5f) * c.k;
+    const float h = v.tipo == 1 ? w * 1.05f : w * 0.62f;
+    const Vector2 b = c.p(pp.x + v.lane * pp.meia, pp.y);  // ponto de contato com o asfalto
+    DrawEllipse(static_cast<int>(b.x), static_cast<int>(b.y), w * 0.62f, w * 0.10f, Fade(BLACK, 0.28f * a));
+    const Color luz = Fade(Color{255, 70, 60, 255}, a);
+    if (v.tipo == 0) {
+        DrawRectangleRounded({b.x - w / 2, b.y - h, w, h}, 0.3f, 6, Fade(v.cor, a));
+        DrawRectangleRounded({b.x - w * 0.36f, b.y - h * 1.5f, w * 0.72f, h * 0.7f}, 0.4f, 6, Fade(v.cor, a));
+        DrawRectangleRounded({b.x - w * 0.30f, b.y - h * 1.42f, w * 0.60f, h * 0.45f}, 0.3f, 6,
+                             Fade(Color{40, 56, 78, 255}, a));
+        DrawRectangleRec({b.x - w * 0.46f, b.y - h * 0.78f, w * 0.16f, h * 0.22f}, luz);
+        DrawRectangleRec({b.x + w * 0.30f, b.y - h * 0.78f, w * 0.16f, h * 0.22f}, luz);
+    } else {
+        DrawRectangleRounded({b.x - w / 2, b.y - h * 1.15f, w, h * 1.0f}, 0.06f, 6, Fade(v.cor, a));
+        DrawRectangleRec({b.x - w / 2, b.y - h * 0.22f, w, h * 0.12f}, Fade(Color{70, 76, 86, 255}, a));
+        DrawRectangleRec({b.x - w * 0.46f, b.y - h * 0.34f, w * 0.12f, h * 0.10f}, luz);
+        DrawRectangleRec({b.x + w * 0.34f, b.y - h * 0.34f, w * 0.12f, h * 0.10f}, luz);
+    }
+}
+
+void Palmeira(const Cena& c, float x, float yBase, float altura) {
+    const Vector2 base = c.p(x, yBase), topo = c.p(x + altura * 0.12f, yBase - altura);
+    DrawLineEx(base, topo, 7 * c.k, Color{112, 86, 54, 255});
+    for (int i = 0; i < 7; ++i) {
+        const float ang = (-160.0f + i * 50.0f) * DEG2RAD;  // leque de folhas
+        const Vector2 ponta{topo.x + std::cos(ang) * altura * 0.42f * c.k,
+                            topo.y + (std::sin(ang) * altura * 0.30f + altura * 0.10f) * c.k};
+        DrawLineEx(topo, ponta, 6 * c.k, Color{38, 116, 54, 255});
+    }
+}
+
+void Nuvem(const Cena& c, float x, float y, float e) {
+    const Vector2 p = c.p(x, y);
+    const Color nuv = Fade(WHITE, 0.86f);
+    DrawEllipse(static_cast<int>(p.x), static_cast<int>(p.y), 70 * e * c.k, 16 * e * c.k, nuv);
+    DrawEllipse(static_cast<int>(p.x + 40 * e * c.k), static_cast<int>(p.y - 8 * e * c.k), 46 * e * c.k,
+                16 * e * c.k, nuv);
+    DrawEllipse(static_cast<int>(p.x - 42 * e * c.k), static_cast<int>(p.y + 3 * e * c.k), 40 * e * c.k,
+                12 * e * c.k, nuv);
+}
+
+// Fundo no tamanho da janela; o cenário se escala e se centraliza como o resto do conteúdo.
 void FundoDecorado(float sw, float sh, float k) {
-    ClearBackground(FUNDO);
-    DrawCircleV({0, 0}, 190 * k, FUNDO_ONDA);
-    DrawCircleV({sw - 30 * k, 90 * k}, 280 * k, FUNDO_ONDA);
-    DrawCircleV({160 * k, sh + 40 * k}, 250 * k, FUNDO_ONDA);
-    DrawCircleV({sw - 180 * k, sh + 70 * k}, 280 * k, FUNDO_ONDA);
-    DrawCircleV({120 * k, sh + 70 * k}, 170 * k, FUNDO_ONDA2);
-    DrawCircleV({sw - 90 * k, sh + 80 * k}, 190 * k, FUNDO_ONDA2);
-    // plantinhas nos cantos de baixo
-    rlPushMatrix();
-    rlTranslatef(0, sh - H * k, 0);
-    rlScalef(k, k, 1);
-    Plantas();
-    rlPopMatrix();
-    rlPushMatrix();
-    rlTranslatef(sw - W * k, sh - H * k, 0);
-    rlScalef(k, k, 1);
-    Folha(1226, 686, 20, 54, AZUL);
-    Folha(1266, 706, 16, 38, AZUL_TXT);
-    rlPopMatrix();
+    const Cena c{(sw - W * k) / 2, (sh - H * k) / 2, k};
+    const float t = static_cast<float>(GetTime());
+    const float hor = c.p(0, HORIZONTE).y;
+
+    DrawRectangleGradientV(0, 0, static_cast<int>(sw), static_cast<int>(hor) + 2, CEU_TOPO, CEU_BAIXO);
+    for (int i = 0; i < 4; ++i)
+        Nuvem(c, std::fmod(t * (4.0f + i) + i * 380.0f, W + 700.0f) - 350.0f, 30.0f + i * 20.0f, 0.8f + 0.12f * i);
+
+    // morros ao longe e mais perto
+    struct Morro { float x, rx, ry; };
+    DrawRectangle(0, static_cast<int>(hor - 18 * k), static_cast<int>(sw), static_cast<int>(26 * k), MORRO_LONGE);
+    const Morro longe[] = {{-420, 520, 120}, {-120, 460, 110}, {420, 380, 88}, {880, 470, 112}, {1350, 420, 100}, {1750, 520, 118}};
+    for (const auto& m : longe) {
+        const Vector2 p = c.p(m.x, HORIZONTE + 24);
+        DrawEllipse(static_cast<int>(p.x), static_cast<int>(p.y), m.rx * k, m.ry * k, MORRO_LONGE);
+    }
+    const Morro perto[] = {{-200, 400, 70}, {140, 330, 66}, {700, 360, 54}, {1180, 340, 72}, {1600, 420, 64}};
+    for (const auto& m : perto) {
+        const Vector2 p = c.p(m.x, HORIZONTE + 30);
+        DrawEllipse(static_cast<int>(p.x), static_cast<int>(p.y), m.rx * k, m.ry * k, MORRO_PERTO);
+    }
+
+    // chão de grama
+    DrawRectangleGradientV(0, static_cast<int>(hor), static_cast<int>(sw), static_cast<int>(sh - hor) + 2,
+                           GRAMA_TOPO, GRAMA_BAIXO);
+
+    // viaduto à esquerda, como na câmera da rodovia
+    DrawLineEx(c.p(-320, 262), c.p(430, 196), 22 * k, Color{150, 156, 164, 255});
+    DrawLineEx(c.p(-320, 250), c.p(430, 184), 4 * k, Color{228, 232, 236, 255});
+    for (float x = -260; x < 430; x += 110) {
+        const float yv = 262 + (196 - 262) * ((x + 320) / 750.0f);
+        const Vector2 topo = c.p(x - 7, yv + 11);
+        DrawRectangleV(topo, {14 * k, (300 - (yv + 11)) * k}, Color{120, 126, 134, 255});
+    }
+
+    // palmeiras e moitas ao lado da pista
+    Palmeira(c, 1240, 262, 120);
+    Palmeira(c, 1196, 252, 86);
+    Palmeira(c, 60, 300, 100);
+    const float moitas[][3] = {{160, 330, 26}, {240, 345, 20}, {1100, 340, 24}, {1160, 360, 30}, {1030, 320, 18}};
+    for (const auto& m : moitas) {
+        const Vector2 p = c.p(m[0], m[1]);
+        DrawEllipse(static_cast<int>(p.x), static_cast<int>(p.y), m[2] * 1.5f * k, m[2] * k, Color{44, 124, 60, 255});
+    }
+
+    // pista: acostamento, asfalto, bordas, guard-rail e faixas
+    FaixaDaPista(c, 0.0f, 1.7f, 0.0f, 1.10f, Color{122, 128, 134, 255});
+    FaixaDaPista(c, 0.0f, 1.7f, 0.0f, 1.0f, ASFALTO);
+    FaixaDaPista(c, 0.0f, 1.7f, -0.965f, 0.022f, FAIXA);
+    FaixaDaPista(c, 0.0f, 1.7f, 0.965f, 0.022f, FAIXA);
+    FaixaDaPista(c, 0.0f, 1.7f, -1.13f, 0.035f, Color{206, 211, 218, 255});
+    FaixaDaPista(c, 0.0f, 1.7f, 1.13f, 0.035f, Color{206, 211, 218, 255});
+    for (int i = 1; i < 19; ++i) {
+        const float s0 = i / 14.0f, s1 = (i + 0.45f) / 14.0f;
+        FaixaDaPista(c, s0 * s0, s1 * s1, -0.333f, 0.012f, FAIXA);
+        FaixaDaPista(c, s0 * s0, s1 * s1, 0.333f, 0.012f, FAIXA);
+    }
+
+    // os de trás primeiro (quem está mais longe tem menor f)
+    const Veiculo* ordem[std::size(VEICULOS)];
+    for (size_t i = 0; i < std::size(VEICULOS); ++i) ordem[i] = &VEICULOS[i];
+    std::sort(ordem, ordem + std::size(VEICULOS), [t](const Veiculo* a, const Veiculo* b) {
+        return std::fmod(t * a->vel + a->fase, 1.0f) > std::fmod(t * b->vel + b->fase, 1.0f);
+    });
+    for (const Veiculo* v : ordem) DesenharVeiculo(c, *v, t);
 }
 
 void Rosto(float cx, float cy, float r, int humor, bool festa = false) {
@@ -201,27 +344,52 @@ void Rosto(float cx, float cy, float r, int humor, bool festa = false) {
     }
 }
 
-// Título "Desafio Ecotrack": a pílula se ajusta ao texto, que sempre fica dentro dela.
+// Painel branco translúcido: dá leitura ao texto por cima do cenário.
+void Painel(Rectangle r, float alfa = 0.9f, float arred = 0.25f) {
+    DrawRectangleRounded({r.x + 3, r.y + 6, r.width, r.height}, arred, 12, Fade(BLACK, 0.16f));
+    DrawRectangleRounded(r, arred, 12, Fade(WHITE, alfa));
+}
+
+// Texto numa pílula branca, centralizado em (cx, cy).
+void Faixa(const std::string& t, float cx, float cy, float size, Color cor = NAVY) {
+    float w = LarguraTexto(t, size) + 56;
+    Painel({cx - w / 2, cy - size * 0.95f, w, size * 1.9f}, 0.88f, 0.5f);
+    Texto(t, cx, cy - size * 0.55f, size, cor);
+}
+
+// Título "Desafio Ecotrack": placa roxa que se ajusta ao texto, com faixas de pista nas pontas.
 void Banner(float cx, float cy, float e) {
     float s1 = 84 * e;
     float w1 = LarguraTexto("Desafio", s1), w2 = LarguraTexto("Ecotrack", s1);
     float gap = 22 * e, pad = 52 * e;
     float larg = w1 + gap + w2 + 2 * pad, alt = 118 * e;
     Rectangle pill{cx - larg / 2, cy - alt / 2, larg, alt};
-    DrawRectangleRounded(pill, 0.5f, 24, Color{200, 225, 250, 255});
-    DrawRectangleRoundedLinesEx(pill, 0.5f, 24, 2 * e, Color{150, 195, 245, 255});
+    DrawRectangleRounded({pill.x + 4 * e, pill.y + 8 * e, larg, alt}, 0.3f, 24, Fade(BLACK, 0.20f));
+    DrawRectangleRounded(pill, 0.3f, 24, ROXO);
+    DrawRectangleRoundedLinesEx({pill.x + 6 * e, pill.y + 6 * e, larg - 12 * e, alt - 12 * e}, 0.3f, 24, 2.5f * e,
+                                Fade(WHITE, 0.55f));
     float x = pill.x + pad, y = cy - s1 * 0.55f;
-    Texto("Desafio", x, y, s1, NAVY, -1);
-    Texto("Ecotrack", x + w1 + gap, y, s1, AZUL, -1);
-    // folhinhas e traços do PDF
-    float fx = pill.x + larg - 70 * e;
-    Folha(fx, pill.y - 8 * e, 14 * e, 30 * e, AZUL_TXT);
-    Folha(fx + 26 * e, pill.y + 6 * e, 12 * e, 26 * e, AZUL);
-    float l = pill.x - 28 * e, r = pill.x + larg + 28 * e;
-    DrawLineEx({l, cy - 18 * e}, {l + 14 * e, cy - 6 * e}, 5 * e, AZUL_TXT);
-    DrawLineEx({l - 6 * e, cy + 14 * e}, {l + 14 * e, cy + 20 * e}, 5 * e, AZUL_TXT);
-    DrawLineEx({r, cy - 18 * e}, {r - 14 * e, cy - 6 * e}, 5 * e, AZUL_TXT);
-    DrawLineEx({r + 6 * e, cy + 14 * e}, {r - 14 * e, cy + 20 * e}, 5 * e, AZUL_TXT);
+    Texto("Desafio", x, y, s1, WHITE, -1);
+    Texto("Ecotrack", x + w1 + gap, y, s1, Color{255, 214, 92, 255}, -1);
+    // três tracinhos de faixa de pista em cada ponta
+    for (int i = 0; i < 3; ++i) {
+        float dx = (12 + i * 20) * e, h = (5 - i) * e;
+        DrawRectangleRounded({pill.x - 18 * e - dx, cy - h / 2, 14 * e, h}, 0.5f, 4, Fade(WHITE, 0.95f - i * 0.2f));
+        DrawRectangleRounded({pill.x + larg + 4 * e + dx, cy - h / 2, 14 * e, h}, 0.5f, 4,
+                             Fade(WHITE, 0.95f - i * 0.2f));
+    }
+}
+
+// Selo no canto, como o da câmera: placa branca com a logo.
+void LogoPlaca(const Texture2D& logo, bool temLogo) {
+    float e = temLogo ? 56.0f / logo.height : 1.0f;
+    float lw = temLogo ? logo.width * e : LarguraTexto("ECOTRACK", 40);
+    Rectangle p{24, 14, lw + 36, 76};
+    DrawRectangleRounded({p.x + 3, p.y + 6, p.width, p.height}, 0.2f, 10, Fade(BLACK, 0.18f));
+    DrawRectangleRounded(p, 0.2f, 10, WHITE);
+    DrawRectangleRoundedLinesEx(p, 0.2f, 10, 4, ROXO);
+    if (temLogo) DrawTextureEx(logo, {p.x + 18, p.y + 10}, 0, e, WHITE);
+    else Texto("ECOTRACK", p.x + 18, p.y + 16, 40, NAVY, -1);
 }
 
 void Visto(float cx, float cy, float s, Color c) {
@@ -326,10 +494,19 @@ void Legenda(Rectangle r, const char* a, const char* b, const char* c, float alf
     const char* nomes[3] = {a, b, c};
     for (int i = 0; i < 3; ++i) {
         float cx = r.x + r.width * (2 * i + 1) / 6.0f;
-        DrawCircle(static_cast<int>(cx), static_cast<int>(r.y + r.height - 62), 11, Fade(CorBotao(i), alfa));
-        // contorno para o botão branco não sumir no cartão claro
-        if (i == 2) DrawCircleLines(static_cast<int>(cx), static_cast<int>(r.y + r.height - 62), 11, Fade(CARTAO_BORDA, alfa));
+        DrawCircle(static_cast<int>(cx), static_cast<int>(r.y + r.height - 62), 12, Fade(ASFALTO_ESC, alfa));
+        DrawCircle(static_cast<int>(cx), static_cast<int>(r.y + r.height - 62), 9, Fade(CorBotao(i), alfa));
         Texto(nomes[i], cx, r.y + r.height - 44, 22, Fade(NAVY, alfa));
+    }
+}
+
+// Lâmpada de semáforo: carcaça escura, vidro colorido e um brilho.
+void Lampada(Vector2 ctr, Color cor, bool acesa) {
+    DrawCircleV(ctr, 78, ASFALTO_ESC);
+    DrawCircleV(ctr, 66, acesa ? cor : Color{86, 94, 108, 255});
+    if (acesa) {
+        DrawCircleLines(static_cast<int>(ctr.x), static_cast<int>(ctr.y), 72, Fade(cor, 0.55f));
+        DrawEllipse(static_cast<int>(ctr.x - 20), static_cast<int>(ctr.y - 26), 20, 11, Fade(WHITE, 0.40f));
     }
 }
 
@@ -342,49 +519,48 @@ void Cartao(const Jogo& jogo, int j, Rectangle r) {
     const bool mascarada = jogo.fase() == Fase::Jogando && rp.travada;
     const bool perdeu = rev && rp.perdeuVez;  // o outro jogador apertou primeiro
 
-    Color fill = CARTAO, borda = CARTAO_BORDA;
-    if (perdeu) { fill = Color{222, 228, 238, 255}; borda = Color{150, 160, 175, 255}; }
+    Color fill = CARTAO, borda = CARTAO_BORDA, cab = j == 0 ? ROXO : TEAL;
+    if (perdeu) { fill = Color{226, 230, 238, 255}; borda = Color{150, 160, 175, 255}; cab = Color{118, 126, 142, 255}; }
     else if (rev) {
-        if (jogo.ganhouRodada(j)) { fill = Color{190, 255, 125, 255}; borda = VERDE_ESC; }
-        else { fill = Color{255, 140, 140, 255}; borda = VERMELHO; }
+        if (jogo.ganhouRodada(j)) { fill = Color{222, 248, 214, 255}; borda = VERDE_ESC; cab = VERDE_ESC; }
+        else { fill = Color{253, 224, 220, 255}; borda = VERMELHO; cab = Color{192, 40, 44, 255}; }
     }
-    DrawRectangleRounded({r.x + 4, r.y + 8, r.width, r.height}, 0.08f, 12, Fade(BLACK, 0.10f));
+    DrawRectangleRounded({r.x + 5, r.y + 10, r.width, r.height}, 0.08f, 12, Fade(BLACK, 0.20f));
     DrawRectangleRounded(r, 0.08f, 12, fill);
-    DrawRectangleRoundedLinesEx(r, 0.08f, 12, vez ? 6.0f : 3.0f, vez ? AZUL : borda);
+    // cabeçalho colorido, como uma placa
+    DrawRectangleRounded({r.x, r.y, r.width, 76}, 0.4f, 12, cab);
+    DrawRectangleRec({r.x, r.y + 40, r.width, 36}, cab);
+    DrawRectangleRoundedLinesEx(r, 0.08f, 12, vez ? 6.0f : 3.0f, vez ? cab : borda);
 
     float cx = r.x + r.width / 2;
-    Texto(TextFormat("Jogador %d", j + 1), cx, r.y + 22, 46, NAVY);
+    Texto(TextFormat("JOGADOR %d", j + 1), cx, r.y + 17, 42, WHITE);
 
-    // círculo + rótulo
-    Vector2 ctr{cx, r.y + 168};
+    // lâmpada + rótulo
+    Vector2 ctr{cx, r.y + 172};
     if (mascarada) {
-        DrawCircleV(ctr, 70, Color{150, 175, 205, 255});
+        Lampada(ctr, Color{150, 175, 205, 255}, true);
         Visto(ctr.x, ctr.y, 80, WHITE);
-        Texto("Pronto!", cx, r.y + 252, 40, NAVY);
+        Texto("Pronto!", cx, r.y + 258, 40, NAVY);
     } else if (!altura && !rp.respondeuCrit) {
-        DrawCircleV(ctr, 70, Color{236, 244, 253, 255});
-        DrawCircleLines(static_cast<int>(ctr.x), static_cast<int>(ctr.y), 70, CARTAO_BORDA);
-        Texto("?", cx, ctr.y - 34, 70, CARTAO_BORDA);
+        Lampada(ctr, WHITE, false);
+        Texto("?", cx, ctr.y - 36, 72, Color{214, 222, 234, 255});
         const char* msg = perdeu ? "perdeu a vez" : vez ? "aperte rápido!" : "aguardando";
-        Texto(msg, cx, r.y + 252, 36, Fade(NAVY, perdeu ? 0.75f : 0.55f));
+        Texto(msg, cx, r.y + 258, 36, Fade(NAVY, perdeu ? 0.75f : 0.55f));
     } else {
         Crit c = rp.critExibida(jogo.modo());
-        DrawCircleV(ctr, 70, CorCrit(c));
-        DrawLineEx({ctr.x - 108, ctr.y - 30}, {ctr.x - 88, ctr.y - 40}, 6, CARTAO_BORDA);
-        DrawLineEx({ctr.x - 112, ctr.y - 6}, {ctr.x - 90, ctr.y - 8}, 6, CARTAO_BORDA);
-        DrawLineEx({ctr.x + 108, ctr.y - 30}, {ctr.x + 88, ctr.y - 40}, 6, CARTAO_BORDA);
-        DrawLineEx({ctr.x + 112, ctr.y - 6}, {ctr.x + 90, ctr.y - 8}, 6, CARTAO_BORDA);
-        Texto(nomeCrit(c), cx, r.y + 252, 40, CorCrit(c));
+        Lampada(ctr, CorCrit(c), true);
+        Texto(nomeCrit(c), cx, r.y + 258, 40, c == Crit::Alerta ? Color{176, 124, 0, 255} : CorCrit(c));
     }
 
-    // pílula com a altura
+    // visor de LED (como os painéis de mensagem da rodovia)
     Rectangle pill{r.x + 40, r.y + 316, r.width - 80, 86};
-    DrawRectangleRounded(pill, 0.5f, 16, Color{234, 245, 253, 255});
+    DrawRectangleRounded(pill, 0.3f, 16, Color{20, 24, 32, 255});
+    DrawRectangleRoundedLinesEx(pill, 0.3f, 16, 3, Color{74, 82, 96, 255});
     std::string txt;
     if (mascarada) txt = "?? cm";
     else if (altura) txt = TextFormat("%dcm", rp.cm());
     else txt = rev ? "-" : "?";
-    Texto(txt, cx, pill.y + 8, 64, NAVY);
+    Texto(txt, cx, pill.y + 9, 64, perdeu ? Color{110, 116, 128, 255} : LED);
 
     // rodapé
     if (vez && altura) Legenda(r, "dezena", "unidade", "confirmar", 1.0f);
@@ -394,11 +570,9 @@ void Cartao(const Jogo& jogo, int j, Rectangle r) {
     } else if (rev) {
         if (jogo.ganhouRodada(j)) Visto(cx, r.y + r.height - 52, 56, VERDE_ESC);
         else Xis(cx, r.y + r.height - 52, 56, Color{170, 20, 25, 255});
-    } else if (!mascarada && jogo.fase() == Fase::Jogando) {
-        Texto("aguarde sua vez", cx, r.y + r.height - 50, 26, Fade(NAVY, 0.6f));
     }
 
-    // carinhas da revelação (como no PDF)
+    // carinhas da revelação
     if (rev) {
         float fx = j == 0 ? r.x + 8 : r.x + r.width - 8;
         Rosto(fx, r.y + 10, 42, perdeu ? 0 : jogo.ganhouRodada(j) ? 1 : -1);
@@ -407,75 +581,92 @@ void Cartao(const Jogo& jogo, int j, Rectangle r) {
 
 // ------------------------------------------------------------------ telas
 void TelaInicio(const Texture2D& logo, bool temLogo) {
-    if (temLogo) {
-        float e = 64.0f / logo.height;
-        DrawTextureEx(logo, {40, 22}, 0, e, WHITE);
-    } else {
-        Texto("ECOTRACK", 40, 30, 54, NAVY, -1);
-    }
+    LogoPlaca(logo, temLogo);
     Banner(W / 2.0f, 200, 1.0f);
-    Texto("Você conhece a grama só de olhar?", W / 2.0f, 310, 44, AZUL_TXT);
+    Faixa("Você conhece a grama só de olhar?", W / 2.0f, 330, 42, ROXO_ESC);
 
     const char* titulo[2] = {"INICIAR", "INICIAR"};
     const char* sub[2] = {"Altura em cm", "Criticidade"};
     for (int i = 0; i < 2; ++i) {
         Rectangle p{210.0f + i * 460.0f, 420, 400, 120};
-        DrawRectangleRounded({p.x + 3, p.y + 8, p.width, p.height}, 0.5f, 16, Fade(BLACK, 0.12f));
+        DrawRectangleRounded({p.x + 4, p.y + 9, p.width, p.height}, 0.5f, 16, Fade(BLACK, 0.25f));
         DrawRectangleRounded(p, 0.5f, 16, BOTAO_INICIAR);
-        DrawCircle(static_cast<int>(p.x + 62), static_cast<int>(p.y + 60), 24, CorBotao(i));
-        DrawCircleLines(static_cast<int>(p.x + 62), static_cast<int>(p.y + 60), 24, WHITE);
+        DrawRectangleRoundedLinesEx(p, 0.5f, 16, 3, Fade(WHITE, 0.85f));
+        DrawCircle(static_cast<int>(p.x + 62), static_cast<int>(p.y + 60), 28, ASFALTO_ESC);
+        DrawCircle(static_cast<int>(p.x + 62), static_cast<int>(p.y + 60), 22, CorBotao(i));
+        DrawEllipse(static_cast<int>(p.x + 55), static_cast<int>(p.y + 51), 9, 5, Fade(WHITE, 0.45f));
         Texto(titulo[i], p.x + 240, p.y + 20, 48, WHITE);
-        Texto(sub[i], p.x + 240, p.y + 72, 30, Color{190, 215, 250, 255});
+        Texto(sub[i], p.x + 240, p.y + 72, 30, Color{255, 214, 92, 255});
     }
-    Texto("aperte o botão verde ou o amarelo", W / 2.0f, 566, 26, Fade(NAVY, 0.6f));
+    Faixa("aperte o botão verde ou o amarelo", W / 2.0f, 590, 24);
+    Faixa("teclado: jogador 1 = 1 2 3   |   jogador 2 = 8 9 0", W / 2.0f, 648, 20, Color{70, 80, 104, 255});
 }
 
 void TelaJogo(const Jogo& jogo, const Foto& foto) {
     Banner(W / 2.0f, 62, 0.62f);
-    Texto(TextFormat("%d - %d", jogo.placar(0), jogo.placar(1)), W / 2.0f, 122, 50, NAVY);
-    Texto(TextFormat("Rodada %d/%d", jogo.rodadaAtual() + 1, jogo.totalRodadas()), 36, 24, 28, NAVY, -1);
+
+    // placar e rodada
+    Painel({W / 2.0f - 110, 110, 220, 64}, 0.92f, 0.5f);
+    Texto(TextFormat("%d - %d", jogo.placar(0), jogo.placar(1)), W / 2.0f, 114, 50, NAVY);
+    std::string rod = TextFormat("Rodada %d/%d", jogo.rodadaAtual() + 1, jogo.totalRodadas());
+    float rw = LarguraTexto(rod, 26) + 40;
+    DrawRectangleRounded({28, 16, rw, 42}, 0.5f, 16, ROXO);
+    Texto(rod, 28 + rw / 2, 23, 26, WHITE);
 
     Cartao(jogo, 0, {72, 178, 382, 500});
     Cartao(jogo, 1, {826, 178, 382, 500});
     DesenharFoto(foto, {492, 180, 296, 496});
 
+    // etiqueta de câmera sobre a foto
+    {
+        std::string cam = TextFormat("CAM %02d", jogo.rodadaAtual() + 1);
+        float cw = LarguraTexto(cam, 20) + 44;
+        Rectangle e{512, 632, cw, 30};
+        DrawRectangleRounded(e, 0.5f, 12, Fade(Color{20, 24, 32, 255}, 0.82f));
+        DrawCircle(static_cast<int>(e.x + 18), static_cast<int>(e.y + 15), 6, VERMELHO);
+        Texto(cam, e.x + cw - 12, e.y + 4, 20, WHITE, 1);
+    }
+
     if (jogo.fase() == Fase::Revelacao) {
         float a = std::min(1.0f, jogo.tempoFase() / 0.35f);
         const Rodada& r = jogo.rodada();
         Rectangle box{526, 310, 228, 270};
-        DrawRectangleRounded(box, 0.22f, 12, Fade(WHITE, 0.82f * a));
+        DrawRectangleRounded(box, 0.22f, 12, Fade(WHITE, 0.86f * a));
         DrawCircle(640, 372, 46 * (0.6f + 0.4f * a), Fade(CorCrit(r.crit()), a));
         Texto(nomeCrit(r.crit()), 640, 436, 40, Fade(CorCrit(r.crit()), a));
         Texto(TextFormat("%dcm", r.alturaCm), 640, 490, 60, Fade(NAVY, a));
-        Texto("aperte qualquer botão para continuar", W / 2.0f, 690, 24, Fade(NAVY, 0.55f));
+        Faixa("aperte qualquer botão para continuar", W / 2.0f, 694, 22);
     } else if (jogo.modo() == Modo::Criticidade) {
-        Texto("Quem apertar primeiro responde. O outro perde a vez!", W / 2.0f, 683, 28, NAVY);
+        Faixa("Quem apertar primeiro responde. O outro perde a vez!", W / 2.0f, 694, 24);
     } else {
-        Texto("Quem confirmar primeiro encerra a rodada!", W / 2.0f, 683, 28, NAVY);
+        Faixa("Quem confirmar primeiro encerra a rodada!", W / 2.0f, 694, 24);
     }
 }
 
 void TelaVencedor(const Jogo& jogo, const Texture2D& logo, bool temLogo) {
-    if (temLogo) DrawTextureEx(logo, {40, 22}, 0, 64.0f / logo.height, WHITE);
-    else Texto("ECOTRACK", 40, 30, 54, NAVY, -1);
+    LogoPlaca(logo, temLogo);
     Banner(W / 2.0f, 200, 1.0f);
+    Painel({130, 276, 1020, 372}, 0.9f, 0.1f);
     int v = jogo.vencedor();
     if (v >= 0) {
         Rosto(400, 470, 84, 1, true);
-        Texto("Vencedor:", 800, 318, 62, AZUL_TXT);
+        Texto("Vencedor:", 800, 318, 62, ROXO);
         Texto(TextFormat("Jogador %d", v + 1), 800, 390, 140, NAVY);
     } else {
         Rosto(400, 470, 84, 0);
         Texto("Empate!", 800, 360, 150, NAVY);
     }
-    Texto(TextFormat("Placar final: %d - %d", jogo.placar(0), jogo.placar(1)), W / 2.0f, 610, 38, NAVY);
-    Texto("aperte qualquer botão para jogar de novo", W / 2.0f, 670, 24, Fade(NAVY, 0.55f));
+    Texto(TextFormat("Placar final: %d - %d", jogo.placar(0), jogo.placar(1)), W / 2.0f, 580, 38, NAVY);
+    Faixa("aperte qualquer botão para jogar de novo", W / 2.0f, 690, 24);
 }
 
 void Status(bool ok, const std::string& t) {
     float w = LarguraTexto(t, 20);
-    DrawCircle(static_cast<int>(W - 24 - w - 14), 32, 6, ok ? VERDE : Color{150, 160, 175, 255});
-    Texto(t, W - 24, 22, 20, Fade(NAVY, 0.7f), 1);
+    Rectangle p{W - 24 - w - 44, 16, w + 44, 40};
+    DrawRectangleRounded({p.x + 2, p.y + 4, p.width, p.height}, 0.5f, 16, Fade(BLACK, 0.16f));
+    DrawRectangleRounded(p, 0.5f, 16, Fade(WHITE, 0.92f));
+    DrawCircle(static_cast<int>(p.x + 20), static_cast<int>(p.y + 20), 7, ok ? VERDE : Color{150, 160, 175, 255});
+    Texto(t, p.x + p.width - 14, p.y + 9, 20, NAVY, 1);
 }
 
 }  // namespace
@@ -588,11 +779,11 @@ int main(int argc, char** argv) {
         if (usarBle) {
             const int n = ble.conectados();
             Status(n > 0, n == 2   ? "Bluetooth: 2 controles"
-                          : n == 1 ? "Bluetooth: 1 controle, procurando o outro..."
-                                   : "Bluetooth: procurando... (teclado: 1,2,3 / 8,9,0)");
+                          : n == 1 ? "Bluetooth: 1 de 2 controles"
+                                   : "Bluetooth: procurando...");
         }
         else if (porta.aberta()) Status(true, "ESP32: " + nomePorta);
-        else Status(false, "teclado: J1 1,2,3 | J2 8,9,0");
+        else Status(false, "modo teclado");
         rlPopMatrix();
         EndDrawing();
     }
