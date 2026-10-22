@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Le o .env e gera ota_boot/secrets.h, que o sketch inclui.
+# Le o .env e gera o secrets.h dos dois sketches (ota_boot_j1 e ota_boot_j2).
 # Rodar sempre que mudar o .env, antes de compilar.
 #
 #   ./gerar_secrets.sh        -> para o .bin publicado: SEM Wi-Fi
@@ -8,8 +8,8 @@ set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ENV_FILE="$DIR/.env"
-SAIDA="$DIR/ota_boot/secrets.h"
-CHAVES=(MANIFEST_URL MQTT_BROKER MQTT_TOPIC)
+SAIDA="$DIR/ota_boot_j1/secrets.h"
+CHAVES=(MANIFEST_URL)
 if [[ "${1:-}" == "--usb" ]]; then
   CHAVES+=(WIFI_SSID WIFI_PASSWORD)
 elif [[ -n "${1:-}" ]]; then
@@ -49,6 +49,7 @@ done < "$ENV_FILE"
     echo "#define $chave \"$escapado\""
   done
 } > "$SAIDA.tmp"
+cp "$SAIDA.tmp" "$DIR/ota_boot_j2/secrets.h"
 mv "$SAIDA.tmp" "$SAIDA"
 
 if [[ "${1:-}" == "--usb" ]]; then

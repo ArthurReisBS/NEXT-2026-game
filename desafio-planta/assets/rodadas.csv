@@ -1,0 +1,9 @@
+# Lista de fotos do jogo. Uma por linha:  arquivo;altura_real_em_cm
+# Os arquivos ficam na pasta assets/imagens/ (jpg ou png; fotos em pé, tipo celular, ficam melhores).
+# Exemplos (apague o # para usar):
+#grama01.jpg;27
+#grama02.jpg;12
+#grama03.jpg;35
+#
+# Enquanto este arquivo não tiver nenhuma linha válida, o jogo usa rodadas de demonstração
+# (a foto exemplo_27cm.jpg e desenhos de teste de grama).

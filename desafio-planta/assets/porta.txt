@@ -1,0 +1,3 @@
+# Porta serial do ESP32. Apague o # e ajuste, ou passe a porta como argumento do programa.
+# Windows:  COM5        Linux:  /dev/ttyUSB0        macOS:  /dev/cu.usbserial-0001
+#COM5

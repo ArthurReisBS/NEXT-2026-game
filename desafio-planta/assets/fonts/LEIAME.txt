@@ -1,0 +1,3 @@
+Opcional: coloque aqui um arquivo chamado fonte.ttf para trocar a fonte do jogo.
+Uma fonte arredondada e "gordinha" (por exemplo, Chewy ou Fredoka, do Google Fonts) deixa a
+interface com a cara do PDF. Sem esse arquivo, o jogo usa a fonte padrão do raylib.
