@@ -203,6 +203,41 @@ static void testeBotaoAntesDoTempoMinimoEIgnorado() {
     CHECK(j.rodadaAtual() == 1);
 }
 
+// Cada desafio sorteia só as fotos marcadas para ele (fotos sem marca valem para os dois).
+static void testeFotosPorDesafio() {
+    std::vector<Rodada> r = {
+        {"a.jpg", 5, PARA_ALTURA},       {"b.jpg", 9, PARA_ALTURA},
+        {"c.jpg", 25, PARA_CRITICIDADE}, {"d.jpg", 32, PARA_CRITICIDADE},
+        {"e.jpg", 12},  // sem marca: vale para os dois
+    };
+    for (int vez = 0; vez < 20; ++vez) {
+        Jogo alt;
+        alt.definirRodadas(r);
+        alt.apertar(Botao::B1);  // Altura
+        CHECK(alt.totalRodadas() == 3);
+        for (int i = 0; i < alt.totalRodadas(); ++i) {
+            CHECK(alt.rodada().desafios & PARA_ALTURA);
+            alt.apertar(Botao::B3);
+            alt.apertar(Botao::B6);
+            alt.atualizar(TEMPO_AUTO_REVELACAO + 0.1f);
+        }
+        Jogo cri;
+        cri.definirRodadas(r);
+        cri.apertar(Botao::B2);  // Criticidade
+        CHECK(cri.totalRodadas() == 3);
+        for (int i = 0; i < cri.totalRodadas(); ++i) {
+            CHECK(cri.rodada().desafios & PARA_CRITICIDADE);
+            cri.apertar(Botao::B1);
+            cri.atualizar(TEMPO_AUTO_REVELACAO + 0.1f);
+        }
+    }
+    // se nenhuma foto é marcada para o desafio, usa todas
+    Jogo so;
+    so.definirRodadas({{"a.jpg", 5, PARA_ALTURA}});
+    so.apertar(Botao::B2);
+    CHECK(so.fase() == Fase::Jogando && so.totalRodadas() == 1);
+}
+
 static void testeSemRodadasNaoInicia() {
     Jogo j;
     j.apertar(Botao::B1);
@@ -229,6 +264,7 @@ int main() {
     testeNuncaPontuaOsDoisAoMesmoTempo();
     testePartidaCompletaEAvancoAutomatico();
     testeBotaoAntesDoTempoMinimoEIgnorado();
+    testeFotosPorDesafio();
     testeSemRodadasNaoInicia();
     testeFaixas();
     if (falhas == 0) std::printf("OK: todos os testes passaram\n");

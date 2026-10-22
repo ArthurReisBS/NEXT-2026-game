@@ -1,9 +1,18 @@
-# Lista de fotos do jogo. Uma por linha:  arquivo;altura_real_em_cm
+# Lista de fotos do jogo. Uma por linha:  arquivo;altura_real_em_cm;desafio
 # Os arquivos ficam na pasta assets/imagens/ (jpg ou png; fotos em pé, tipo celular, ficam melhores).
-# Exemplos (apague o # para usar):
-#grama01.jpg;27
-#grama02.jpg;12
-#grama03.jpg;35
-#
-# Enquanto este arquivo não tiver nenhuma linha válida, o jogo usa rodadas de demonstração
-# (a foto exemplo_27cm.jpg e desenhos de teste de grama).
+# desafio (opcional): altura, criticidade ou ambos. Sem a coluna, a foto vale para os dois.
+# Cada partida sorteia até 5 fotos do desafio escolhido.
+
+# desafio Altura em cm
+5cm.jpg;5;altura
+9cm.jpg;9;altura
+12cm.jpg;12;altura
+13cm.jpg;13;altura
+30cm.jpg;30;altura
+
+# desafio Criticidade (OK abaixo de 20 cm, Alerta de 20 a 29, Crítico a partir de 30)
+6cm.jpg;6;criticidade
+15cm.jpg;15;criticidade
+25cm.jpg;25;criticidade
+32cm.jpg;32;criticidade
+35cm.jpg;35;criticidade

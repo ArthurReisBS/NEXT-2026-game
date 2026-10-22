@@ -1,6 +1,7 @@
 // Desafio EcoTrack - interface dos dois minigames.
 // Recebe os botões do ESP32 pela USB (linhas BTN1..BTN6) ou do teclado.
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -67,7 +68,8 @@ std::string Aparar(std::string s) {
     return s.substr(a, b - a + 1);
 }
 
-// assets/rodadas.csv: "arquivo.jpg;altura_em_cm" (arquivo dentro de assets/imagens/).
+// assets/rodadas.csv: "arquivo.jpg;altura_em_cm;desafio" (arquivo dentro de assets/imagens/;
+// desafio = altura, criticidade ou ambos, e pode faltar).
 std::vector<Rodada> CarregarRodadas() {
     std::vector<Rodada> v;
     std::ifstream in(CaminhoAsset("rodadas.csv"));
@@ -80,8 +82,17 @@ std::vector<Rodada> CarregarRodadas() {
         if (pos == std::string::npos) continue;
         std::string arq = Aparar(linha.substr(0, pos));
         std::string alt = Aparar(linha.substr(pos + 1));
+        int desafios = PARA_AMBOS;
+        size_t pos2 = alt.find_first_of(";,");
+        if (pos2 != std::string::npos) {
+            std::string d = Aparar(alt.substr(pos2 + 1));
+            alt = Aparar(alt.substr(0, pos2));
+            for (char& c : d) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (d.rfind("alt", 0) == 0) desafios = PARA_ALTURA;
+            else if (d.rfind("crit", 0) == 0) desafios = PARA_CRITICIDADE;
+        }
         if (arq.empty() || alt.empty() || alt[0] < '0' || alt[0] > '9') continue;
-        v.push_back({"imagens/" + arq, std::atoi(alt.c_str())});
+        v.push_back({"imagens/" + arq, std::atoi(alt.c_str()), desafios});
     }
     if (v.empty()) {  // modo demonstração: as imagens que não existem viram desenhos de teste
         v = {{"imagens/exemplo_27cm.jpg", 27}, {"imagens/demo_8cm.jpg", 8},

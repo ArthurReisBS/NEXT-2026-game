@@ -47,9 +47,15 @@ inline const char* nomeCrit(Crit c) {
     return "?";
 }
 
+// Em quais desafios a foto aparece (máscara de bits).
+constexpr int PARA_ALTURA = 1;
+constexpr int PARA_CRITICIDADE = 2;
+constexpr int PARA_AMBOS = PARA_ALTURA | PARA_CRITICIDADE;
+
 struct Rodada {
     std::string imagem;  // caminho relativo a assets/ (pode não existir: vira desenho de teste)
     int alturaCm = 0;
+    int desafios = PARA_AMBOS;
     Crit crit() const { return classificar(alturaCm); }
 };
 
@@ -125,7 +131,12 @@ private:
     void iniciar(Modo m) {
         if (pool_.empty()) return;
         modo_ = m;
-        rodadas_ = pool_;
+        // só as fotos deste desafio; se nenhuma foi marcada para ele, usa todas
+        const int bit = m == Modo::Altura ? PARA_ALTURA : PARA_CRITICIDADE;
+        rodadas_.clear();
+        for (const Rodada& r : pool_)
+            if (r.desafios & bit) rodadas_.push_back(r);
+        if (rodadas_.empty()) rodadas_ = pool_;
         std::shuffle(rodadas_.begin(), rodadas_.end(), rng_);
         if (static_cast<int>(rodadas_.size()) > RODADAS_POR_PARTIDA)
             rodadas_.resize(RODADAS_POR_PARTIDA);
