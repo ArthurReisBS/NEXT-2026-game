@@ -13,33 +13,36 @@ enum ResultadoOTA {
   OTA_GRAVACAO_FALHOU
 };
 
-const char *VERSAO_FIRMWARE = "3.2";
+const char *VERSAO_FIRMWARE = "3.3";
 
 const char *URL_MANIFESTO = MANIFEST_URL;
 
 const unsigned long DEBOUNCE_MS = 30UL;
 
 // O jogo procura o ESP32 por este servico e recebe os botoes como notificacoes
-// da caracteristica. Os mesmos UUIDs estao em jogo/jogo.py.
+// da caracteristica. Os mesmos UUIDs estao em desafio-planta/src/ble.cpp e ponte_ble/ponte_ble.py.
+// As duas placas (jogador 1 e 2) usam os mesmos UUIDs; o jogo separa pelos BTN1-3 / BTN4-6.
 const char *UUID_SERVICO = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
 const char *UUID_CARACTERISTICA = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
 
 struct Botao {
   uint8_t pino;
   uint8_t numero;
+  int8_t led;  // pino do LED do botao, -1 = sem LED
   bool estadoEstavel;
   bool ultimaLeitura;
   unsigned long ultimaMudancaMs;
 };
 
+// Placa do jogador 2: manda BTN4 a BTN6. A do jogador 1 fica em ota_boot_j1.
+const char *NOME_BLUETOOTH = "NEXT2026-J2";
+
+// O GPIO12 decide a tensao da flash no boot: o botao nele tem que ir para o GND,
+// nunca para o 3,3 V. LED amarelo no GPIO13 porque o 34 e so de entrada.
 Botao botoes[] = {
-  {25, 1, HIGH, HIGH, 0},  // BTN1 verde
-  {26, 2, HIGH, HIGH, 0},  // BTN2 amarelo
-  {27, 3, HIGH, HIGH, 0},  // BTN3 vermelho
-  // jogador 2 (usado na corrida da Criticidade)
-  {32, 4, HIGH, HIGH, 0},  // BTN4 verde
-  {33, 5, HIGH, HIGH, 0},  // BTN5 amarelo
-  {23, 6, HIGH, HIGH, 0}   // BTN6 vermelho
+  {12, 4, 14, HIGH, HIGH, 0},  // BTN4 verde
+  {27, 5, 13, HIGH, HIGH, 0},  // BTN5 amarelo
+  {18, 6, -1, HIGH, HIGH, 0}   // BTN6 Enter (sem LED)
 };
 const uint8_t QUANTIDADE_BOTOES = sizeof(botoes) / sizeof(botoes[0]);
 
@@ -215,6 +218,11 @@ void configurarBotoes() {
   // Botao entre o pino e o GND: solto = HIGH (pull-up interno), apertado = LOW.
   for (uint8_t i = 0; i < QUANTIDADE_BOTOES; i++) {
     pinMode(botoes[i].pino, INPUT_PULLUP);
+    // LED entre o pino e o GND: HIGH acende.
+    if (botoes[i].led >= 0) {
+      pinMode(botoes[i].led, OUTPUT);
+      digitalWrite(botoes[i].led, LOW);
+    }
   }
 }
 
@@ -236,7 +244,7 @@ void desligarWiFi() {
 }
 
 void iniciarBluetooth() {
-  const String nome = "NEXT2026-botoes";
+  const String nome = NOME_BLUETOOTH;
   NimBLEDevice::init(nome.c_str());
 
   NimBLEServer *servidor = NimBLEDevice::createServer();
@@ -276,11 +284,11 @@ void enviarBotao(uint8_t numero) {
   caracteristicaBotoes->notify();
 }
 
-// Para testar sem os botoes: digitar 1 a 6 no Serial Monitor aperta o botao correspondente.
+// Para testar sem os botoes: digitar 1 a 3 no Serial Monitor aperta o botao correspondente.
 void lerTestePelaSerial() {
   while (Serial.available()) {
     char c = Serial.read();
-    if (c >= '1' && c <= '6') enviarBotao(c - '0');
+    if (c >= '1' && c <= '3') enviarBotao(botoes[c - '1'].numero);
   }
 }
 
@@ -294,6 +302,8 @@ void lerBotoes(unsigned long agora) {
     }
     if (agora - b.ultimaMudancaMs >= DEBOUNCE_MS && leitura != b.estadoEstavel) {
       b.estadoEstavel = leitura;
+      // O LED fica aceso enquanto o botao estiver apertado.
+      if (b.led >= 0) digitalWrite(b.led, b.estadoEstavel == LOW ? HIGH : LOW);
       if (b.estadoEstavel == LOW) {
         enviarBotao(b.numero);
       }

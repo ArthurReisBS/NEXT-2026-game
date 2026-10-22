@@ -1,5 +1,6 @@
 .env
-ota_boot/secrets.h
-ota_boot/build/
+ota_boot_*/secrets.h
+ota_boot_*/build/
 cliente_teste.py
 .venv/
+__pycache__/
