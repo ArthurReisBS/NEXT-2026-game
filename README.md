@@ -26,6 +26,37 @@ No minigame de Altura cada jogador monta o seu número e os dois precisam confir
 
 Cada botão vai entre o pino e o **GND** (sem resistor, o pull-up é interno). Na placa J2 o GPIO12 decide a tensão da flash no boot: o botão dele vai para o GND, nunca para o 3,3 V.
 
+## Guia rápido
+
+**Só quero jogar** (as placas já foram gravadas):
+1. Ligue as duas placas ESP32 na energia (USB de carregador serve) e espere uns 15 segundos.
+2. Ligue o Bluetooth do computador e abra o jogo:
+   ```bash
+   cd desafio-planta
+   cmake -B build
+   cmake --build build --config Release
+   build\Release\desafio_planta.exe
+   ```
+3. No canto da tela deve aparecer **"Bluetooth: 2 controles"**. Aperte o botão verde ou o amarelo para começar.
+4. Sem as placas? Joga pelo teclado: jogador 1 = teclas 1 2 3, jogador 2 = teclas 8 9 0.
+
+**Quero mudar alguma coisa:**
+
+| Quero mudar... | Onde | Depois |
+| -------------- | ---- | ------ |
+| As fotos do jogo | copie a foto para `desafio-planta/assets/imagens/` e acrescente uma linha em `desafio-planta/assets/rodadas.csv` (`arquivo.jpg;altura;altura` ou `;criticidade`) | só abrir o jogo de novo |
+| Os limites de OK / Alerta / Crítico | `LIMITE_ALERTA_CM` e `LIMITE_CRITICO_CM` em `desafio-planta/src/game.hpp` | recompilar (`cmake --build build --config Release`) |
+| As regras e a pontuação | `desafio-planta/src/game.hpp` | recompilar e rodar os testes (abaixo) |
+| O visual (cores, textos, cenário) | `desafio-planta/src/main.cpp` | recompilar |
+| Os botões das placas (pinos, nome) | `ota_boot_j1/ota_boot_j1.ino` e `ota_boot_j2/ota_boot_j2.ino` | gravar a placa de novo pela USB |
+
+Rodar os testes das regras (leva 2 segundos):
+```bash
+g++ -std=c++17 desafio-planta/tests/test_game.cpp -o test_game && ./test_game
+```
+
+**Uma placa não conecta ou voltou a funcionar por MQTT:** grave ela de novo pela USB (passo "Gravar o ESP32" abaixo, e vale para J1 e para J2).
+
 ## Como rodar
 
 ### 1. Gravar o ESP32
