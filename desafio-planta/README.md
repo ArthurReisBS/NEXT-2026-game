@@ -20,9 +20,9 @@ Na tela inicial, o botão **verde** inicia o minigame de altura e o **amarelo** 
 
 | Botão (J1 / J2) | Pino (J1 / J2) | Minigame 1: altura | Minigame 2: criticidade |
 |---|---|---|---|
-| verde (BTN1 / BTN4) | GPIO25 / GPIO32 | +1 na dezena (0 a 9, volta ao 0) | OK |
-| amarelo (BTN2 / BTN5) | GPIO26 / GPIO33 | +1 na unidade (0 a 9, volta ao 0) | Alerta |
-| vermelho (BTN3 / BTN6) | GPIO27 / GPIO23 | confirmar | Crítico |
+| verde (BTN1 / BTN4) | GPIO18 / GPIO12 | +1 na dezena (0 a 9, volta ao 0) | OK |
+| amarelo (BTN2 / BTN5) | GPIO19 / GPIO27 | +1 na unidade (0 a 9, volta ao 0) | Alerta |
+| Enter (BTN3 / BTN6) | GPIO21 / GPIO18 | confirmar | Crítico |
 
 Na criticidade o botão apertado já é a resposta final, porque não sobra botão para "confirmar".
 
@@ -33,7 +33,7 @@ OK abaixo de 20 cm, Alerta de 20 a 29 cm, Crítico a partir de 30 cm.
 
 ## 1. Gravar o ESP32
 
-O firmware fica em `../ota_boot/ota_boot.ino` (botões nos GPIO25/26/27, envia `BTN1`/`BTN2`/`BTN3` por Bluetooth). O passo a passo para gravar está no [README da raiz](../README.md).
+Há um firmware por placa: `../ota_boot_j1/ota_boot_j1.ino` (jogador 1, envia `BTN1`-`BTN3`) e `../ota_boot_j2/ota_boot_j2.ino` (jogador 2, `BTN4`-`BTN6`), cada um com os pinos da tabela acima. O passo a passo para gravar está no [README da raiz](../README.md).
 
 Para testar: no Serial Monitor (115200), apertar cada botão mostra `BTN1`, `BTN2` ou `BTN3`; digitar `1` a `6` faz o mesmo sem os botões. Feche o Serial Monitor antes de abrir o jogo por serial (só um programa usa a porta por vez).
 
