@@ -13,7 +13,7 @@ enum ResultadoOTA {
   OTA_GRAVACAO_FALHOU
 };
 
-const char *VERSAO_FIRMWARE = "3.3";
+const char *VERSAO_FIRMWARE = "3.4";
 
 const char *URL_MANIFESTO = MANIFEST_URL;
 
